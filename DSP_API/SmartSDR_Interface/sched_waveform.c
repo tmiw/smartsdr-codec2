@@ -271,10 +271,17 @@ static void* _sched_waveform_thread(void* param)
     int		initial_rx = 1;			// Flags for RX circular buffer, clear if starting receive
 
 	// VOCODER I/O BUFFERS
-    short	speech_in[FREEDV_NSAMPLES];
-    short 	speech_out[FREEDV_NSAMPLES];
-    short 	demod_in[FREEDV_NSAMPLES];
-    short 	mod_out[FREEDV_NSAMPLES];
+//     short	speech_in[FREEDV_NSAMPLES];		//  freedv_get_n_speech_samples()
+//     short 	speech_out[FREEDV_NSAMPLES];	//  freedv_get_n_speech_samples()
+//     short 	demod_in[FREEDV_NSAMPLES];		//  freedv_get_n_max_modem_samples()
+//     short 	mod_out[FREEDV_NSAMPLES];		//  freedv_get_n_nom_modem_samples()
+	short *speech_in;
+	short *speech_out;
+	short *demod_in;
+	short *mod_out;
+
+	int sync;
+	float snr_est;
 
     // RX RESAMPLER I/O BUFFERS
     float 	float_in_8k[PACKET_SAMPLES + FILTER_TAPS];
@@ -296,7 +303,14 @@ static void* _sched_waveform_thread(void* param)
 
     // =======================  Initialization Section =========================
     _freedvS = freedv_open(FREEDV_MODE_1600);	// Default system, only
-    //assert(_freedvS != NULL);					// debug only
+    //assert(_freedvS != NULL);					// debug only\
+
+    //  Allocate buffers
+
+    speech_in = (short *) safe_malloc(freedv_get_n_speech_samples(_freedvS) * sizeof(short));
+    speech_out = (short *) safe_malloc(freedv_get_n_speech_samples(_freedvS) * sizeof(short));
+    demod_in = (short *) safe_malloc(freedv_get_n_max_modem_samples(_freedvS) * sizeof(short));
+    mod_out = (short *) safe_malloc(freedv_get_n_nom_modem_samples(_freedvS) * sizeof(short));
 
     // Initialize the Circular Buffers
 
@@ -337,15 +351,10 @@ static void* _sched_waveform_thread(void* param)
 	initial_tx = TRUE;
 	initial_rx = TRUE;
 
-    // initialize the rx callback
-    _freedvS->freedv_put_next_rx_char = &my_put_next_rx_char;
-
-    // Set up callback for txt msg chars
-    // clear tx_string
-    memset(_my_cb_state.tx_str,0,80);
+    // Clear TX string
+    memset(_my_cb_state.tx_str, 0, sizeof(_my_cb_state.tx_str));
     _my_cb_state.ptx_str = _my_cb_state.tx_str;
-    _freedvS->callback_state = (void*)&_my_cb_state;
-    _freedvS->freedv_get_next_tx_char = &my_get_next_tx_char;
+    freedv_set_callback_txt(_freedvS, &my_put_next_rx_char, &my_get_next_tx_char, &_my_cb_state);
 
     uint32 bypass_count = 0;
     BOOL bypass_demod = TRUE;
@@ -444,16 +453,14 @@ static void* _sched_waveform_thread(void* param)
 							if ( csbContains(RX2_cb) >= nin )
 							{
 	//
-								for( i=0 ; i< nin ; i++)
+								for( i = 0 ; i < nin ; i++)
 								{
 									demod_in[i] = cbReadShort(RX2_cb);
 								}
 
 								nout = freedv_rx(_freedvS, speech_out, demod_in);
-
-
-
-								if ( _freedvS->fdmdv_stats.sync ) {
+								freedv_get_modem_stats(_freedvS, &sync, &snr_est);
+								if ( sync ) {
 									/* Increase count for turning bypass off */
 									if ( bypass_count < 10) bypass_count++;
 								} else {
@@ -717,6 +724,12 @@ static void* _sched_waveform_thread(void* param)
 	}
 	_waveform_thread_abort = TRUE;
 	 freedv_close(_freedvS);
+
+	free(speech_in);
+    free(speech_out);
+    free(demod_in);
+	free(mod_out);
+
 	return NULL;
 }
 

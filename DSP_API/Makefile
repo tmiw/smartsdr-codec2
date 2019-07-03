@@ -1,51 +1,32 @@
-################################################################################
-# Automatically-generated file. Do not edit!
-################################################################################
+CFLAGS = -I. -ISmartSDR_Interface -Icodec2/src
+OBJS =	SmartSDR_Interface/cmd_basics.o \
+	SmartSDR_Interface/cmd_engine.o \
+	SmartSDR_Interface/discovery_client.o \
+	SmartSDR_Interface/hal_buffer.o \
+	SmartSDR_Interface/hal_listener.o \
+	SmartSDR_Interface/hal_vita.o \
+	SmartSDR_Interface/io_utils.o \
+	SmartSDR_Interface/sched_waveform.o \
+	SmartSDR_Interface/smartsdr_dsp_api.o \
+	SmartSDR_Interface/status_processor.o \
+	SmartSDR_Interface/traffic_cop.o \
+	SmartSDR_Interface/utils.o \
+	SmartSDR_Interface/vita_output.o \
+	main.o \
+	resampler.o \
+	circular_buffer.o \
 
--include ../makefile.init
+freedv: $(OBJS) libcodec2.a
+	$(CC) -static -o freedv $(OBJS) -Lcodec2/build/src -lcodec2 -lm -pthread
+	echo "Done!"
 
-RM := rm -rf
-
-# All of the sources participating in the build are defined here
--include sources.mk
--include SmartSDR_Interface/subdir.mk
--include CODEC2_FREEDV/subdir.mk
--include subdir.mk
--include objects.mk
-
-ifneq ($(MAKECMDGOALS),clean)
-ifneq ($(strip $(C_DEPS)),)
--include $(C_DEPS)
-endif
-endif
-
--include ../makefile.defs
-
-# Add inputs and outputs from these tool invocations to the build variables 
-
-# All Target
-all: freedv
-
-# Tool invocations
-freedv: $(OBJS) $(USER_OBJS)
-	@echo 'Building target: $@'
-	@echo 'Invoking: GCC C Linker'
-	arm-linux-gnueabihf-gcc -static  -o "freedv" $(OBJS) $(USER_OBJS) $(LIBS)
-	@echo 'Finished building target: $@'
-	@echo ' '
-	$(MAKE) --no-print-directory post-build
+libcodec2.a:
+	@mkdir -p codec2/build
+	cd codec2/build && \
+	cmake -DBUILD_SHARED_LIBS=OFF .. && \
+	make
 
 # Other Targets
 clean:
 	-$(RM) $(EXECUTABLES) $(OBJS) $(C_DEPS) freedv 
 	-@echo ' '
-
-post-build:
-	-@echo 'Install in BeagleBone at /home/debian/bin'
-	-scp freedv root@192.168.20.33:/home/debian/bin/
-	-@echo ' '
-
-.PHONY: all clean dependents
-.SECONDARY: post-build
-
--include ../makefile.targets
