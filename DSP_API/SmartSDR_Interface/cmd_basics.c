@@ -135,7 +135,7 @@ uint32 cmd_exit(int requester_fd, int argc,char **argv)
 
 	write(requester_fd, string1, strlen(string1));
 
-	_exit(0);
+	exit(0);
 	return SUCCESS;
 }
 
