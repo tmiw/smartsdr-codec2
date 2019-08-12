@@ -120,6 +120,12 @@ static void _dc_RadioFound(Radio radio)
 
 static void _dc_ListenerParsePacket(uint8* packet, int32 length, struct sockaddr_in* sender)
 {
+	int argc = 1;
+	int i;
+	char *argv[MAX_ARGC];
+	char **argptr;
+	char *argsstring;
+
 	//output("_dc_ListenerParsePacket\n");
 
 	// is this packet long enough to inspect for VITA header info?
@@ -132,6 +138,7 @@ static void _dc_ListenerParsePacket(uint8* packet, int32 length, struct sockaddr
 
 	// cast the incoming packet as a VITA packet
 	VitaIFData p = (VitaIFData)packet;
+
 
 	// does this packet have our OUI?
 	if(ntohl(p->class_id_h) != 0x00001C2D)
@@ -161,14 +168,21 @@ static void _dc_ListenerParsePacket(uint8* packet, int32 length, struct sockaddr
 	// discovery packet and we will attempt to split the payload up
 	// similar to a command on spaces and parse the data
 
-	int argc, i;
-	char *argv[MAX_ARGC + 1];		//Add one extra so we can null terminate the array
+	argsstring = (char *) p->payload;
+
+	output("_dc_ListenerParsePacket: payload: %s\n", p->payload);
 
 	// split the payload string up
-	tokenize((char*)p->payload, &argc, argv, MAX_ARGC);
+//	tokenize((char*)p->payload, &argc, argv, MAX_ARGC);
+	for(argptr = argv; (*argptr = strsep(&argsstring, " \t")) != NULL; ++argc) {
+		output("_dc_ListenderParsePacket: token is %s\n", *argptr);
+		fflush(stdout);
+		if (**argptr != '\0')
+			if (++argptr >= &argv[MAX_ARGC])
+				break;
+	}
 
-	//output("_dc_ListenerParsePacket: payload: %s\n", p->payload);
-	//output("_dc_ListenerParsePacket: tokenize argc=%u\n", argc);
+	output("_dc_ListenerParsePacket: Completed parsing, %d args\n", argc);
 
 	Radio radio = (Radio)safe_malloc(sizeof(radioType));
 	if(!radio)
@@ -181,26 +195,55 @@ static void _dc_ListenerParsePacket(uint8* packet, int32 length, struct sockaddr
 	memset(radio, 0, sizeof(radioType));
 
 	// for each token, process the string
-	for(i=0; i<argc; i++)
-	{
-		if(strncmp(argv[i], "discovery_protocol_version", strlen("discovery_protocol_version")) == 0)
-			radio->discovery_protocol_version = argv[i]+strlen("discovery_protocol_version=");
-		else if(strncmp(argv[i], "model", strlen("model")) == 0)
-			radio->model = argv[i]+strlen("model=");
-		else if(strncmp(argv[i], "serial", strlen("serial")) == 0)
-			radio->serial = argv[i]+strlen("serial=");
-		else if(strncmp(argv[i], "version", strlen("version")) == 0)
-			radio->version = argv[i]+strlen("version=");
-		else if(strncmp(argv[i], "nickname", strlen("nickname")) == 0)
-			radio->nickname = argv[i]+strlen("nickname=");
-		else if(strncmp(argv[i], "callsign", strlen("callsign")) == 0)
-			radio->callsign = argv[i]+strlen("callsign=");
-		else if(strncmp(argv[i], "ip", strlen("ip")) == 0)
-			radio->ip = argv[i]+strlen("ip=");
-		else if(strncmp(argv[i], "port", strlen("port")) == 0)
-			radio->port = argv[i]+strlen("port=");
-		else if(strncmp(argv[i], "status", strlen("status")) == 0)
-			radio->status = argv[i]+strlen("status=");
+	for(i = 0; i < argc; i++) {
+
+		char *value = argv[i];
+		char *name = strsep(&value, "=");
+
+		//  We didn't find anything, this is an error, just continue
+		if(value == NULL)
+			continue;
+
+		output("Name: %s, Value: %s\n", name, value);
+
+		if(strncmp(name, "discovery_protocol_version", strlen("discovery_protocol_version")) == 0)
+			radio->discovery_protocol_version = value;
+		else if(strncmp(name, "model", strlen("model")) == 0)
+			radio->model = value;
+		else if(strncmp(name, "serial", strlen("serial")) == 0)
+			radio->serial = value;
+		else if(strncmp(name, "version", strlen("version")) == 0)
+			radio->version = value;
+		else if(strncmp(name, "nickname", strlen("nickname")) == 0)
+			radio->nickname = value;
+		else if(strncmp(name, "callsign", strlen("callsign")) == 0)
+			radio->callsign = value;
+		else if(strncmp(name, "ip", strlen("ip")) == 0)
+			radio->ip = value;
+		else if(strncmp(name, "port", strlen("port")) == 0)
+			radio->port = value;
+		else if(strncmp(name, "status", strlen("status")) == 0)
+			radio->status = value;
+
+//
+// 		if(strncmp(argv[i], "discovery_protocol_version", strlen("discovery_protocol_version")) == 0)
+// 			radio->discovery_protocol_version = argv[i]+strlen("discovery_protocol_version=");
+// 		else if(strncmp(argv[i], "model", strlen("model")) == 0)
+// 			radio->model = argv[i]+strlen("model=");
+// 		else if(strncmp(argv[i], "serial", strlen("serial")) == 0)
+// 			radio->serial = argv[i]+strlen("serial=");
+// 		else if(strncmp(argv[i], "version", strlen("version")) == 0)
+// 			radio->version = argv[i]+strlen("version=");
+// 		else if(strncmp(argv[i], "nickname", strlen("nickname")) == 0)
+// 			radio->nickname = argv[i]+strlen("nickname=");
+// 		else if(strncmp(argv[i], "callsign", strlen("callsign")) == 0)
+// 			radio->callsign = argv[i]+strlen("callsign=");
+// 		else if(strncmp(argv[i], "ip", strlen("ip")) == 0)
+// 			radio->ip = argv[i]+strlen("ip=");
+// 		else if(strncmp(argv[i], "port", strlen("port")) == 0)
+// 			radio->port = argv[i]+strlen("port=");
+// 		else if(strncmp(argv[i], "status", strlen("status")) == 0)
+// 			radio->status = argv[i]+strlen("status=");
 	}
 
 	// did we get at least an IP, port, and version?
@@ -265,8 +308,8 @@ static void* _dc_ListenerLoop(void* param)
 
 		while (!success && !_dc_abort)
 		{
-			memset(&sender,0,sizeof(struct sockaddr_in));
-			memset(&buf,0,ETH_FRAME_LEN);
+			memset(&sender, 0, sizeof(struct sockaddr_in));
+			memset(buf, 0, ETH_FRAME_LEN);
 			success = _dc_ListenerRecv(buf, &length, &sender);
 		}
 
