@@ -38,6 +38,8 @@
 #include <semaphore.h>
 #include <string.h>
 #include <unistd.h>
+#include <assert.h>
+#include <errno.h>
 
 #include "common.h"
 #include "datatypes.h"
@@ -59,6 +61,10 @@ static pthread_t _waveform_thread;
 static BOOL _waveform_thread_abort = FALSE;
 
 static sem_t sched_waveform_sem;
+
+struct freedv_params {
+	int mode;
+};
 
 static void _dsp_convertBufEndian(BufferDescriptor buf_desc)
 {
@@ -237,10 +243,11 @@ void sched_waveform_setEndOfTX(BOOL end_of_transmission)
     _end_of_transmission = TRUE;
 }
 
-static void* _sched_waveform_thread(void* param)
+static void* _sched_waveform_thread(void *arg)
 {
     int 	nin, nout, radio_samples;
     int		i;			// for loop counter
+    int		ret;
     float	fsample;	// a float sample
 
     // Flags ...
@@ -252,7 +259,7 @@ static void* _sched_waveform_thread(void* param)
 	short *demod_in;
 	short *mod_out;
 
-	int mode = FREEDV_MODE_700D;
+	struct freedv_params *params = (struct freedv_params *) arg;
 
 	float packet_buffer[PACKET_SAMPLES];
 
@@ -275,13 +282,15 @@ static void* _sched_waveform_thread(void* param)
 	soxr_t rx_upsampler = soxr_create(8000, 24000, 1, &error, &io_spec, NULL, NULL);
 
     // =======================  Initialization Section =========================
-    if ((mode == FREEDV_MODE_700D) || (mode == FREEDV_MODE_2020)) {
+    if ((params->mode == FREEDV_MODE_700D) || (params->mode == FREEDV_MODE_2020)) {
         struct freedv_advanced adv;
         adv.interleave_frames = 1;
-        _freedvS = freedv_open_advanced(mode, &adv);
+        _freedvS = freedv_open_advanced(params->mode, &adv);
     } else {
-        _freedvS = freedv_open(mode);
+        _freedvS = freedv_open(params->mode);
     }
+
+    assert(_freedvS != NULL);
 
     //  XXX Check these sizes.
     int rx_ringbuffer_size = freedv_get_n_max_modem_samples(_freedvS) * sizeof(float) * 4;
@@ -321,6 +330,8 @@ static void* _sched_waveform_thread(void* param)
 	initial_tx = TRUE;
 	initial_rx = TRUE;
 
+	struct timespec timeout;
+
     // Clear TX string
     memset(_my_cb_state.tx_str, 0, sizeof(_my_cb_state.tx_str));
     _my_cb_state.ptx_str = _my_cb_state.tx_str;
@@ -329,12 +340,27 @@ static void* _sched_waveform_thread(void* param)
 	// show that we are running
 	BufferDescriptor buf_desc;
 
-	for (;;) {
-		// wait for a buffer descriptor to get posted
-		sem_wait(&sched_waveform_sem);
+	output("Starting processing thread...\n");
 
-		if(_waveform_thread_abort)
-			break;
+	while (_waveform_thread_abort == FALSE) {
+		// wait for a buffer descriptor to get posted
+		if(clock_gettime(CLOCK_REALTIME, &timeout) == -1) {
+			output("Couldn't get time.\n");
+			continue;
+		}
+		timeout.tv_sec += 1;
+
+		while((ret = sem_timedwait(&sched_waveform_sem, &timeout)) == -1 && errno == EINTR)
+			continue;
+
+		if(ret == -1) {
+			if(errno == ETIMEDOUT) {
+				continue;
+			} else {
+				output("Error acquiring semaphore: %s\n", strerror(errno));
+				continue;
+			}
+		}
 
 		while(buf_desc = _WaveformList_UnlinkHead()) {
 			// convert the buffer to little endian
@@ -379,10 +405,10 @@ static void* _sched_waveform_thread(void* param)
 					freedv_get_modem_extended_stats(_freedvS, &stats);
 
 					if (stats.sync) {
-						output("SNR: %d\n", stats.snr_est);
-						output("Frequency Offset: %d\n", stats.foff);
-						output("Clock Offset: %d\n", stats.clock_offset);
-						output("Sync Quality: %d\n", stats.sync_metric);
+						output("SNR: %f\n", stats.snr_est);
+						output("Frequency Offset: %3.1f\n", stats.foff);
+						output("Clock Offset: %5d\n", (int) round(stats.clock_offset * 1E6));
+						output("Sync Quality: %3.2f\n", stats.sync_metric);
 						output("\n");
 					}
 
@@ -537,6 +563,7 @@ static void* _sched_waveform_thread(void* param)
 		} // While Loop
 		hal_BufferRelease(&buf_desc);
 	} // For Loop
+	output("Processing thread stopped...\n");
 	_waveform_thread_abort = TRUE;
 	 freedv_close(_freedvS);
 
@@ -545,10 +572,26 @@ static void* _sched_waveform_thread(void* param)
     free(demod_in);
 	free(mod_out);
 
-	ringbuf_free(rx_input_buffer);
-	ringbuf_free(rx_output_buffer);
+	ringbuf_free(&rx_input_buffer);
+	ringbuf_free(&rx_output_buffer);
+
+	free(params);
 
 	return NULL;
+}
+
+static void start_processing_thread(int mode)
+{
+	struct freedv_params *params;
+	params = (struct freedv_params *) malloc(sizeof(struct freedv_params));
+
+	params->mode = mode;
+
+	pthread_create(&_waveform_thread, NULL, &_sched_waveform_thread, params);
+
+	struct sched_param fifo_param;
+	fifo_param.sched_priority = 30;
+	pthread_setschedparam(_waveform_thread, SCHED_FIFO, &fifo_param);
 }
 
 void sched_waveform_Init(void)
@@ -564,11 +607,18 @@ void sched_waveform_Init(void)
 
 	sem_init(&sched_waveform_sem, 0, 0);
 
-	pthread_create(&_waveform_thread, NULL, &_sched_waveform_thread, NULL);
+	start_processing_thread(FREEDV_MODE_1600);
+}
 
-	struct sched_param fifo_param;
-	fifo_param.sched_priority = 30;
-	pthread_setschedparam(_waveform_thread, SCHED_FIFO, &fifo_param);
+void freedv_set_mode(int mode)
+{
+	output("Stopping Thread...\n");
+	_waveform_thread_abort = TRUE;
+	pthread_join(_waveform_thread, NULL);
+	output("Restarting thread with new mode...\n");
+
+	_waveform_thread_abort = FALSE;
+	start_processing_thread(mode);
 }
 
 void sched_waveformThreadExit()
@@ -576,3 +626,26 @@ void sched_waveformThreadExit()
 	_waveform_thread_abort = TRUE;
 	sem_post(&sched_waveform_sem);
 }
+
+uint32 cmd_freedv_mode(int requester_fd, int argc, char **argv)
+{
+	assert (argv != NULL);
+	assert (argv[0] != NULL);
+
+	if(argc != 2) {
+		output("Usage: freedv-mode <1600|700D>\n");
+		return SL_BAD_COMMAND;
+	}
+
+	if(strncmp(argv[1], "1600\n", 4) == 0) {
+		output("Changing to 1600");
+		freedv_set_mode(FREEDV_MODE_1600);
+	} else if(strncmp(argv[1], "700D", 4) == 0) {
+		output("Changing to 700D\n");
+		freedv_set_mode(FREEDV_MODE_700D);
+	} else {
+		output("Unknown mode %s\n", argv[1]);
+	}
+	return SUCCESS;
+}
+

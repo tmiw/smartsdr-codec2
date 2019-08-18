@@ -40,6 +40,7 @@ void sched_waveform_Schedule(BufferDescriptor buf);
 void sched_waveform_Init(void);
 void sched_waveform_signal(void);
 void sched_waveformTreadExit(void);
+uint32 cmd_freedv_mode(int requester_fd, int argc, char **argv);
 
 void sched_waveform_setEndOfTX(BOOL end_of_transmission);
 #endif /* SCHED_WAVEFORM_H_ */

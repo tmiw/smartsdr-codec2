@@ -46,6 +46,7 @@
 
 #include "cmd.h"
 #include "main.h"
+#include "sched_waveform.h"
 
 static struct termios old, new;		// For Terminal IO
 
@@ -81,6 +82,7 @@ static command_def commands[] =
         {   "slice",                cmd_slice                   },  // Handle slice changes
         {   "time",                 cmd_time                    },  // Print the time
         {   "?",                    cmd_help                    },  // Display Help
+        {   "fdv-mode",             cmd_freedv_mode             },
         {   0,                      cmd_undefined               },  // Undefined - must be last in the list
 
 };
