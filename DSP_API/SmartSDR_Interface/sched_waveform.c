@@ -1,19 +1,7 @@
-///*!   \file sched_waveform.c
-// *    \brief Schedule Wavefrom Streams
-// *
-// *    \copyright  Copyright 2012-2014 FlexRadio Systems.  All Rights Reserved.
-// *                Unauthorized use, duplication or distribution of this software is
-// *                strictly prohibited by law.
-// *
-// *    \date 29-AUG-2014
-// *    \author 	Ed Gonzalez
-// *    \mangler 	Graham / KE9H
-// *
-// */
-
+// SPDX-Licence-Identifier: GPL-3.0-or-later
 /* *****************************************************************************
  *
- *  Copyright (C) 2014 FlexRadio Systems.
+ *  Copyright (C) 2014-2019 FlexRadio Systems.
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -29,6 +17,10 @@
  *  Contact Information:
  *  email: gpl<at>flexradiosystems.com
  *  Mail:  FlexRadio Systems, Suite 1-150, 4616 W. Howard LN, Austin, TX 78728
+ *
+ *  Author: Ed Gonzalez
+ *  Author: Graham (KE9H)
+ *  Author: Annaliese McDermond <nh6z@nh6z.net>
  *
  * ************************************************************************** */
 
@@ -48,8 +40,6 @@
 #include "vita_output.h"
 #include "freedv_api.h"
 #include "modem_stats.h"
-#include "circular_buffer.h"  // Remove me!
-#include "resampler.h" // Remove me!
 #include "ringbuf.h"
 
 #include "soxr.h"
@@ -144,40 +134,12 @@ void sched_waveform_signal()
 
 #define PACKET_SAMPLES  128
 
-#define SCALE_TX_IN     24000.0 	// Multiplier   // Was 16000 GGH Jan 30, 2015
-#define SCALE_TX_OUT    24000.0 	// Divisor
-
-#define FILTER_TAPS	48
-#define DECIMATION_FACTOR 	3
-
-/* These are offsets for the input buffers to decimator */
-#define MEM_24		FILTER_TAPS					   /* Memory required in 24kHz buffer */
-#define MEM_8		FILTER_TAPS/DECIMATION_FACTOR   /* Memory required in 8kHz buffer */
-
-static struct freedv *_freedvS;         // Initialize Coder structure
 static struct my_callback_state  _my_cb_state;
 
 #define MAX_RX_STRING_LENGTH 40
 static char _rx_string[MAX_RX_STRING_LENGTH + 5];
 
 static BOOL _end_of_transmission = FALSE;
-
-// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-//	Circular Buffer Declarations
-
-float TX1_buff[(PACKET_SAMPLES * 12) +1];		// TX1 Packet Input Buffer
-short TX2_buff[(PACKET_SAMPLES * 12)+1];		// TX2 Vocoder input buffer
-short TX3_buff[(PACKET_SAMPLES * 12)+1];		// TX3 Vocoder output buffer
-float TX4_buff[(PACKET_SAMPLES * 12)+1];		// TX4 Packet output Buffer
-
-circular_float_buffer tx1_cb;
-Circular_Float_Buffer TX1_cb = &tx1_cb;
-circular_short_buffer tx2_cb;
-Circular_Short_Buffer TX2_cb = &tx2_cb;
-circular_short_buffer tx3_cb;
-Circular_Short_Buffer TX3_cb = &tx3_cb;
-circular_float_buffer tx4_cb;
-Circular_Float_Buffer TX4_cb = &tx4_cb;
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // Callbacks for embedded ASCII stream, transmit and receive
@@ -240,6 +202,7 @@ void freedv_set_string(uint32 slice, char* string)
 
 void sched_waveform_setEndOfTX(BOOL end_of_transmission)
 {
+	output("Setting end of waveform\n");
     _end_of_transmission = TRUE;
 }
 
@@ -248,40 +211,25 @@ static void* _sched_waveform_thread(void *arg)
     int 	nin, nout, radio_samples;
     int		i;			// for loop counter
     int		ret;
-    float	fsample;	// a float sample
-
-    // Flags ...
-    int		initial_tx = 1; 		// Flags for TX circular buffer, clear if starting transmit
-    int		initial_rx = 1;			// Flags for RX circular buffer, clear if starting receive
-
-	short *speech_in;
-	short *speech_out;
-	short *demod_in;
-	short *mod_out;
 
 	struct freedv_params *params = (struct freedv_params *) arg;
 
 	float packet_buffer[PACKET_SAMPLES];
+	struct timespec timeout;
 
-    // TX RESAMPLER I/O BUFFERS
-    float 	tx_float_in_8k[PACKET_SAMPLES + FILTER_TAPS];
-    float 	tx_float_out_8k[PACKET_SAMPLES];
+	BufferDescriptor buf_desc;
 
-    float 	tx_float_in_24k[PACKET_SAMPLES * DECIMATION_FACTOR + FILTER_TAPS];
-    float 	tx_float_out_24k[PACKET_SAMPLES * DECIMATION_FACTOR ];
-
-    BOOL inhibit_tx = FALSE;
-    BOOL flush_tx = FALSE;
+	struct freedv *_freedvS;         // Initialize Coder structure
 
 	soxr_error_t error;
-
 	soxr_io_spec_t io_spec = soxr_io_spec(SOXR_FLOAT32_I, SOXR_INT16_I);
     soxr_t rx_downsampler = soxr_create(24000, 8000, 1, &error, &io_spec, NULL, NULL);
+    soxr_t tx_downsampler = soxr_create(24000, 8000, 1, &error, &io_spec, NULL, NULL);
 
     io_spec = soxr_io_spec(SOXR_INT16_I, SOXR_FLOAT32_I);
 	soxr_t rx_upsampler = soxr_create(8000, 24000, 1, &error, &io_spec, NULL, NULL);
+	soxr_t tx_upsampler = soxr_create(8000, 24000, 1, &error, &io_spec, NULL, NULL);
 
-    // =======================  Initialization Section =========================
     if ((params->mode == FREEDV_MODE_700D) || (params->mode == FREEDV_MODE_2020)) {
         struct freedv_advanced adv;
         adv.interleave_frames = 1;
@@ -290,47 +238,25 @@ static void* _sched_waveform_thread(void *arg)
         _freedvS = freedv_open(params->mode);
     }
 
+//     freedv_set_squelch_en(_freedvS, 0);
+
     assert(_freedvS != NULL);
 
-    //  XXX Check these sizes.
+	int tx_speech_samples = freedv_get_n_speech_samples(_freedvS);
+	int tx_modem_samples = freedv_get_n_nom_modem_samples(_freedvS);
     int rx_ringbuffer_size = freedv_get_n_max_modem_samples(_freedvS) * sizeof(float) * 4;
+
     ringbuf_t rx_input_buffer = ringbuf_new (rx_ringbuffer_size);
     ringbuf_t rx_output_buffer = ringbuf_new (rx_ringbuffer_size);
 
-    freedv_set_squelch_en(_freedvS, 0);
+    ringbuf_t tx_input_buffer = ringbuf_new (tx_speech_samples * sizeof(float) * 4);
+    ringbuf_t tx_output_buffer = ringbuf_new (tx_modem_samples * sizeof(float) * 4);
 
-    //  Allocate buffers
-    speech_in = (short *) safe_malloc(freedv_get_n_speech_samples(_freedvS) * sizeof(short));
-    speech_out = (short *) safe_malloc(freedv_get_n_speech_samples(_freedvS) * sizeof(short));
-    demod_in = (short *) safe_malloc(freedv_get_n_max_modem_samples(_freedvS) * sizeof(short));
-    mod_out = (short *) safe_malloc(freedv_get_n_nom_modem_samples(_freedvS) * sizeof(short));
+    short *speech_in = (short *) safe_malloc(freedv_get_n_speech_samples(_freedvS) * sizeof(short));
+    short *speech_out = (short *) safe_malloc(freedv_get_n_speech_samples(_freedvS) * sizeof(short));
+    short *demod_in = (short *) safe_malloc(freedv_get_n_max_modem_samples(_freedvS) * sizeof(short));
+    short *mod_out = (short *) safe_malloc(freedv_get_n_nom_modem_samples(_freedvS) * sizeof(short));
     //  XXX Probably should memalign here.
-
-    // Initialize the Circular Buffers
-	TX1_cb->size  = PACKET_SAMPLES * 6 + 1;		// size = no.elements in array+1
-	TX1_cb->start = 0;
-	TX1_cb->end	  = 0;
-	TX1_cb->elems = TX1_buff;
-
-	TX2_cb->size  = PACKET_SAMPLES * 6 + 1;		// size = no.elements in array+1
-	TX2_cb->start = 0;
-	TX2_cb->end	  = 0;
-	TX2_cb->elems = TX2_buff;
-
-	TX3_cb->size  = PACKET_SAMPLES * 6 + 1;		// size = no.elements in array+1
-	TX3_cb->start = 0;
-	TX3_cb->end	  = 0;
-	TX3_cb->elems = TX3_buff;
-
-	TX4_cb->size  = PACKET_SAMPLES * 12 + 1;		// size = no.elements in array+1
-	TX4_cb->start = 0;
-	TX4_cb->end	  = 0;
-	TX4_cb->elems = TX4_buff;
-
-	initial_tx = TRUE;
-	initial_rx = TRUE;
-
-	struct timespec timeout;
 
     // Clear TX string
     memset(_my_cb_state.tx_str, 0, sizeof(_my_cb_state.tx_str));
@@ -338,7 +264,6 @@ static void* _sched_waveform_thread(void *arg)
     freedv_set_callback_txt(_freedvS, &my_put_next_rx_char, &my_get_next_tx_char, &_my_cb_state);
 
 	// show that we are running
-	BufferDescriptor buf_desc;
 
 	output("Starting processing thread...\n");
 
@@ -368,9 +293,6 @@ static void* _sched_waveform_thread(void *arg)
 
 			if ((buf_desc->stream_id & 1) == 0) {
 				//	Set the transmit 'initial' flag
-				initial_tx = TRUE;
-				inhibit_tx = FALSE;
-				flush_tx = FALSE;
 				_end_of_transmission = FALSE;
 
 				for( i = 0 ; i < PACKET_SAMPLES ; i++)
@@ -430,134 +352,60 @@ static void* _sched_waveform_thread(void *arg)
 				}
 				emit_waveform_output(buf_desc);
 			} else if ( (buf_desc->stream_id & 1) == 1) { //TX BUFFER
-				//	If 'initial_rx' flag, clear buffers TX1, TX2, TX3, TX4
-				if(initial_tx) {
-					TX1_cb->start = 0;	// Clear buffers RX1, RX2, RX3, RX4
-					TX1_cb->end	  = 0;
-					TX2_cb->start = 0;
-					TX2_cb->end	  = 0;
-					TX3_cb->start = 0;
-					TX3_cb->end	  = 0;
-					TX4_cb->start = 0;
-					TX4_cb->end	  = 0;
+				if(_end_of_transmission && ringbuf_is_empty(tx_output_buffer))
+					continue;
 
-					/* Clear filter memory */
+				for( i = 0 ; i < PACKET_SAMPLES ; i++)
+					packet_buffer[i] = ((Complex *) buf_desc->buf_ptr)[i].real;
+				ringbuf_memcpy_into (tx_input_buffer, packet_buffer, sizeof(packet_buffer));
 
-					memset(tx_float_in_24k, 0, MEM_24 * sizeof(float));
-					memset(tx_float_in_8k, 0, MEM_8 * sizeof(float));
+				if(ringbuf_bytes_used(tx_input_buffer) >= tx_speech_samples * sizeof(float) * 3) {
+					float resample_buffer[tx_speech_samples * 3];
+					size_t odone;
 
-					/* Requires us to set initial_rx to FALSE which we do at the end of
-					 * the first loop
-					 */
+					ringbuf_memcpy_from(resample_buffer, tx_input_buffer, tx_speech_samples * sizeof(float) * 3);
+
+					error = soxr_process (tx_downsampler,
+											resample_buffer, tx_speech_samples * 3, NULL,
+											speech_in, tx_speech_samples, &odone);
+
+					freedv_tx(_freedvS, mod_out, speech_in);
+
+					error = soxr_process (tx_upsampler,
+										  mod_out, tx_modem_samples, NULL,
+										  resample_buffer, tx_modem_samples * 3, &odone);
+
+					ringbuf_memcpy_into (tx_output_buffer, resample_buffer, odone * sizeof(float));
 				}
 
-				initial_rx = TRUE;
-				// Check for new receiver input packet & move to TX1_cb.
-				// TODO - If transmit packet, discard here?
-
-				if ( !inhibit_tx ) {
-					for( i = 0 ; i < PACKET_SAMPLES ; i++ )
-						cbWriteFloat(TX1_cb, ((Complex*)buf_desc->buf_ptr)[i].real);
-
-					// Check for >= 384 samples in TX1_cb and spin downsampler
-					//	Convert to shorts and move to TX2_cb.
-					if(cfbContains(TX1_cb) >= 384) {
-						for(i=0 ; i<384 ; i++)
-							tx_float_in_24k[i + MEM_24] = cbReadFloat(TX1_cb);
-
-						fdmdv_24_to_8(tx_float_out_8k, &tx_float_in_24k[MEM_24], 128);
-
-						for(i=0 ; i<128 ; i++)
-							cbWriteShort(TX2_cb, (short) (tx_float_out_8k[i]*SCALE_TX_IN));
-					}
-
-//						// Check for >= 320 samples in TX2_cb and spin vocoder
-					// 	Move output to TX3_cb.
-						if ( csbContains(TX2_cb) >= 320 ) {
-							for( i=0 ; i< 320 ; i++)
-								speech_in[i] = cbReadShort(TX2_cb);
-
-							freedv_tx(_freedvS, mod_out, speech_in);
-
-							for( i=0 ; i < 320 ; i++)
-								cbWriteShort(TX3_cb, mod_out[i]);
-						}
-
-					// Check for >= 128 samples in TX3_cb, convert to floats
-					//	and spin the upsampler. Move output to TX4_cb.
-
-					if(csbContains(TX3_cb) >= 128) {
-						for( i=0 ; i<128 ; i++)
-							tx_float_in_8k[i+MEM_8] = ((float)  (cbReadShort(TX3_cb) / SCALE_TX_OUT));
-
-						fdmdv_8_to_24(tx_float_out_24k, &tx_float_in_8k[MEM_8], 128);
-
-						for( i=0 ; i<384 ; i++)
-							cbWriteFloat(TX4_cb, tx_float_out_24k[i]);
-						//Sig2Noise = (_freedvS->fdmdv_stats.snr_est);
-					}
+				if(ringbuf_bytes_used(tx_output_buffer) >= PACKET_SAMPLES * sizeof(float)) {
+					ringbuf_memcpy_from (packet_buffer, tx_output_buffer, sizeof(packet_buffer));
+					for (i = 0; i < PACKET_SAMPLES; ++i)
+						((Complex *) buf_desc->buf_ptr)[i].real =
+							((Complex *) buf_desc->buf_ptr)[i].imag =
+							packet_buffer[i];
+				} else {
+					memset (buf_desc->buf_ptr, 0, PACKET_SAMPLES * sizeof(Complex));
 				}
-				// Check for >= 128 samples in RX4_cb. Form packet and
-				//	export.
+				emit_waveform_output(buf_desc);
 
-				uint32 tx_check_samples = PACKET_SAMPLES;
+				//  If we're at the end, drain the buffer
+				if (_end_of_transmission) {
+					while(!ringbuf_is_empty(tx_output_buffer)) {
+						int n = ringbuf_bytes_used(tx_output_buffer) >= PACKET_SAMPLES ? PACKET_SAMPLES : ringbuf_bytes_used(tx_output_buffer);
+						output("Draining %d bytes from buffer\n", n);
 
-				if(initial_tx)
-					tx_check_samples = PACKET_SAMPLES * 3;
+						memset (buf_desc->buf_ptr, 0, PACKET_SAMPLES * sizeof(Complex));
 
-				if ( _end_of_transmission )
-					flush_tx = TRUE;
+						ringbuf_memcpy_from (packet_buffer, tx_output_buffer, n);
 
-				if ( !inhibit_tx ) {
-					if(cfbContains(TX4_cb) >= tx_check_samples ) {
-						for( i = 0 ; i < PACKET_SAMPLES ; i++) {
-							//output("Fetching from end buffer \n");
-							// Set up the outbound packet
-							fsample = cbReadFloat(TX4_cb);
-							// put the fsample into the outbound packet
-							((Complex*)buf_desc->buf_ptr)[i].real = fsample;
-							((Complex*)buf_desc->buf_ptr)[i].imag = fsample;
-						}
-					} else {
-						memset( buf_desc->buf_ptr, 0, PACKET_SAMPLES * sizeof(Complex));
-
-						if(initial_tx)
-							initial_tx = FALSE;
+						for (i = 0; i < n / sizeof(float); ++i)
+							((Complex *) buf_desc->buf_ptr)[i].real =
+								((Complex *) buf_desc->buf_ptr)[i].imag =
+								packet_buffer[i];
+						emit_waveform_output(buf_desc);
 					}
-
-					emit_waveform_output(buf_desc);
-
-					if ( flush_tx ) {
-						inhibit_tx = TRUE;
-
-						while ( cfbContains(TX4_cb) > 0 ) {
-							if ( cfbContains(TX4_cb) > PACKET_SAMPLES ) {
-								for( i = 0 ; i < PACKET_SAMPLES ; i++) {
-									// Set up the outbound packet
-									fsample = cbReadFloat(TX4_cb);
-
-									// put the fsample into the outbound packet
-									((Complex*)buf_desc->buf_ptr)[i].real = fsample;
-									((Complex*)buf_desc->buf_ptr)[i].imag = fsample;
-								}
-							} else {
-								int end_index = 0;
-								for ( i = 0 ; i <= cfbContains(TX4_cb); i++ ) {
-									fsample = cbReadFloat(TX4_cb);
-									((Complex*)buf_desc->buf_ptr)[i].real = fsample;
-									((Complex*)buf_desc->buf_ptr)[i].imag = fsample;
-									end_index = i+1;
-								}
-
-								for ( i = end_index ; i < PACKET_SAMPLES ; i++ ) {
-									((Complex*)buf_desc->buf_ptr)[i].real = 0.0f;
-									((Complex*)buf_desc->buf_ptr)[i].imag = 0.0f;
-								}
-
-							}
-							emit_waveform_output(buf_desc);
-						}
-					}
+					output("Buffer drained\n");
 				}
 			}
 		} // While Loop
@@ -574,6 +422,8 @@ static void* _sched_waveform_thread(void *arg)
 
 	ringbuf_free(&rx_input_buffer);
 	ringbuf_free(&rx_output_buffer);
+	ringbuf_free(&tx_input_buffer);
+	ringbuf_free(&tx_output_buffer);
 
 	free(params);
 
