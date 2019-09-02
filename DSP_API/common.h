@@ -33,9 +33,8 @@
 #include <pthread.h>
 
 #include "datatypes.h"
-#include "hal_listener.h"
 #include "io_utils.h"
-#include "vita_output.h"
+#include "vita-io.h"
 #include "vita49_context.h"
 #include "smartsdr_dsp_api.h"
 #include "utils.h"

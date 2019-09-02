@@ -32,13 +32,13 @@
 #include <unistd.h>
 #include <assert.h>
 #include <errno.h>
+#include <arpa/inet.h>
 
 #include "common.h"
 #include "datatypes.h"
 #include "hal_buffer.h"
 #include "sched_waveform.h"
-#include "vita_output.h"
-#include "freedv_api.h"
+#include "vita-io.h"
 #include "modem_stats.h"
 #include "ringbuf.h"
 

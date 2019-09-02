@@ -3,7 +3,6 @@ set(WAVEFORM_SRCS
     cmd_engine.c
     discovery_client.c
     hal_buffer.c
-    hal_listener.c
     hal_vita.c
     io_utils.c
     ringbuf.c
@@ -12,7 +11,7 @@ set(WAVEFORM_SRCS
     status_processor.c
     traffic_cop.c
     utils.c
-    vita_output.c
+    vita-io.c
 )
 
 add_library(waveform ${WAVEFORM_SRCS})

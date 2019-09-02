@@ -35,11 +35,13 @@
 #define SCHED_WAVEFORM_H_
 
 #include "hal_buffer.h"
+#include "freedv_api.h"
 
 void sched_waveform_Schedule(BufferDescriptor buf);
 void sched_waveform_Init(void);
 void sched_waveform_signal(void);
 void sched_waveformTreadExit(void);
+void freedv_set_mode(int mode);
 uint32 cmd_freedv_mode(int requester_fd, int argc, char **argv);
 
 void sched_waveform_setEndOfTX(BOOL end_of_transmission);
