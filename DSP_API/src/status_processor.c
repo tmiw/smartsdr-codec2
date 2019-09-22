@@ -75,18 +75,21 @@ static void _handle_status(char* string)
             if(strncmp(argv[i], "mode", strlen("mode")) == 0)
             {
                 errno = 0;
-                char* smode = argv[i]+strlen("mode")+1;
-                if (strncmp(smode,"FDV",3) == 0)
-                {
+                char* smode = argv[i] + strlen("mode") + 1;
+                if (strncmp(smode, "FDV", 3) == 0) {
                     // we are now in FDV mode
                     output(ANSI_MAGENTA "slice %d is now in FDV mode - sendig commands\n",slc);
 
                     char cmd[512] = {0};
                     sprintf(cmd, "slice s %d digu_offset=1500", slc);
                     tc_sendSmartSDRcommand(cmd, FALSE, NULL);
-                }
-                else
-                {
+                    freedv_set_mode(FREEDV_MODE_1600);
+                } else if (strncmp(smode, "DV7D ", 4) == 0) {
+                    char cmd[512] = {0};
+                    sprintf(cmd, "slice s %d digu_offset=1500", slc);
+                    tc_sendSmartSDRcommand(cmd, FALSE, NULL);
+                    freedv_set_mode(FREEDV_MODE_700D);
+                } else {
                     // we have left FDV mode
                     output(ANSI_MAGENTA "slice %d is in %s mode\n",slc,smode);
                 }
