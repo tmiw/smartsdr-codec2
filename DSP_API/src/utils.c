@@ -58,6 +58,7 @@ static void _output_stdio(const char *fmt, va_list args)
 {
     pthread_mutex_lock(&_printf_mutex);
     vprintf(fmt, args);
+    fflush(stdout);
     pthread_mutex_unlock(&_printf_mutex);
 }
 
