@@ -76,7 +76,47 @@
 // 16 ip header, 6 udp header
 #define MAX_UDP_DATA_SIZE (2048)
 
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+#define VITA_OUI_MASK 			0xffffff00
+#define FLEX_OUI 				0x2d1c0000
+#define STREAM_BITS_IN			0x00000080
+#define STREAM_BITS_OUT		    0x00000000
+#define STREAM_BITS_METER		0x00000008
+#define STREAM_BITS_WAVEFORM    0x00000001
+#else
+#define VITA_OUI_MASK 			0x00ffffff
+#define FLEX_OUI 				0x00001c2d
+#define STREAM_BITS_IN			0x80000000
+#define STREAM_BITS_OUT		    0x00000000
+#define STREAM_BITS_METER		0x08000000
+#define STREAM_BITS_WAVEFORM    0x01000000
+#endif
+
+#define STREAM_BITS_MASK	    (STREAM_BITS_IN | STREAM_BITS_OUT | STREAM_BITS_METER | STREAM_BITS_WAVEFORM)
+
+#pragma pack(push, 1)
+struct vita_packet {
+	uint8 packet_type;
+	uint8 timestamp_type;
+	uint16 length;
+	uint32 stream_id;
+	uint64 class_id;
+	uint32 timestamp_int;
+	uint64 timestamp_frac;
+	union {
+		uint8 raw_payload[1024];
+		uint32 if_samples[256];
+		struct meter {
+			uint16 id;
+			uint16 value;
+		} meter[256];
+	} payload;
+};
+#pragma pack(pop)
+#define VITA_PACKET_HEADER_SIZE (sizeof(struct vita_packet) - sizeof((struct vita_packet){0}.payload))
+
 #define MAX_IF_DATA_PAYLOAD_SIZE (MAX_UDP_DATA_SIZE) //-28)
+// #define MAX_IF_DATA_PAYLOAD_SIZE (ETH_DATA_LEN - 60 - 8 - sizeof(struct vita_header)) //  Max frame minus max IP header minus max UDP Header
 typedef struct _vita_if_data
 {
     uint32 header;

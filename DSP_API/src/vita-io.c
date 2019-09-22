@@ -48,7 +48,6 @@
 #include "common.h"
 #include "hal_vita.h"
 #include "sched_waveform.h"
-#include "stream.h"
 
 #define FORMAT_DBFS 0
 #define FORMAT_DBM 1
@@ -192,74 +191,47 @@ void emit_waveform_output(BufferDescriptor buf_desc_out)
 	}
 }
 
-char* _hal_getStreamType(ShortStreamType strm_type)
-{
-	switch (strm_type)
-	{
-		case FFT: return "FFT";
-		case MMX: return "MMX";
-		case AUD: return "AUD";
-		case MET: return "MET";
-		case DSC: return "DSC";
-		case IQD: return "IQD";
-		case TXD: return "TXD";
-		case PAN: return "PAN";
-		case WFL: return "WFL";
-		case WFM: return "WFM";
-		case XXX: return "---";
-	}
-	return "---";
-}
-
-static void _hal_ListenerProcessWaveformPacket(VitaIFData p, uint32 stream_id, int32 length)
+static void _hal_ListenerProcessWaveformPacket(struct vita_packet *packet, ssize_t length)
 {
 	BufferDescriptor buf_desc;
 	buf_desc = hal_BufferRequest(HAL_RX_BUFFER_SIZE, sizeof(Complex));
 
 	if(!buf_desc->timestamp_int) {
-		buf_desc->timestamp_int = htonl(p->timestamp_int);
-		buf_desc->timestamp_frac_h = htonl(p->timestamp_frac_h);
-		buf_desc->timestamp_frac_l = htonl(p->timestamp_frac_l);
+		buf_desc->timestamp_int = htonl(packet->timestamp_int);
+		buf_desc->timestamp_frac_h = htonl(packet->timestamp_frac >> 32);
+		buf_desc->timestamp_frac_l = htonl(packet->timestamp_frac);
 	}
 
-	// calculate number of samples in the buffer
-	uint32 packet_frames = hal_VitaIFPacketPayloadSize(p)/buf_desc->sample_size;
-
-	// verify the frames fit in the actual packet size
-	if(packet_frames * 8 > length - 28) {
-		output( "\033[91mIncoming packet size (%d) smaller than vita header claims\033[m\n", length);
+// 	calculate number of samples in the buffer
+	short payload_length = ((htons(packet->length) * sizeof(uint32)) - VITA_PACKET_HEADER_SIZE);
+	if(payload_length != length - VITA_PACKET_HEADER_SIZE) {
+		output("VITA header size doesn't match bytes read from network\n");
 		hal_BufferRelease(&buf_desc);
 		return;
 	}
 
-	uint32 frames_to_copy = packet_frames;
-
-	memcpy(buf_desc->buf_ptr, // dest
-			p->payload, // src
-			frames_to_copy * buf_desc->sample_size); // number of bytes to copy
-
-	buf_desc->stream_id = ntohl(p->stream_id);
+	memcpy(buf_desc->buf_ptr, packet->payload.raw_payload, payload_length);
+	buf_desc->stream_id = htonl(packet->stream_id);
 	sched_waveform_Schedule(buf_desc);
 }
 
-static void _hal_ListenerParsePacket(uint8* packet, int32 length)
+static void _hal_ListenerParsePacket(void *data, ssize_t length)
 {
 	// make sure packet is long enough to inspect for VITA header info
-	if(length < 28)
+	if(length < VITA_PACKET_HEADER_SIZE)
 		return;
 
-	VitaIFData p = (VitaIFData) packet;
+	struct vita_packet *packet = (struct vita_packet *) data;
 
-	// does this packet have our OUI?
-	if(htonl(p->class_id_h) != 0x00001C2D)
+	if(packet->class_id & VITA_OUI_MASK != FLEX_OUI)
 		return;
 
-	switch(htonl(p->stream_id) & STREAM_BITS_MASK) {
+	switch(packet->stream_id & STREAM_BITS_MASK) {
 		case STREAM_BITS_WAVEFORM | STREAM_BITS_IN:
-			_hal_ListenerProcessWaveformPacket(p, p->stream_id, length);
+			_hal_ListenerProcessWaveformPacket(packet, length);
 			break;
 		default:
-			output("Undefined stream in %08X", p->stream_id);
+			output("Undefined stream in %08X", htonl(packet->stream_id));
 			break;
 	}
 }
