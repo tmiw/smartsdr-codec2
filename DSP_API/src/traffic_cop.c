@@ -359,8 +359,8 @@ static void* _tc_thread(void* arg)
     	tc_abort();
     }
 
-    /* Initialize UDP connections for TX */
-    vita_output_Init(_hostname);
+    /* Initialize VITA communications socket */
+    vita_init(_hostname);
 
     tc_startKeepalive();
 

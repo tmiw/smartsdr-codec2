@@ -101,12 +101,13 @@ static void _dc_RadioFound(Radio radio)
 		output("Radio found\n");
 		// yes -- connect and stop looking for more radios
 		// TODO: connect
-		    // start a keepalive to keep the channel open and know when it dies
+
+		// start a keepalive to keep the channel open and know when it dies
 		tc_Init(radio->ip, radio->port);
 
-		usleep(250000);
-		hal_Listener_Init();
-
+// 		usleep(250000);
+// 		hal_Listener_Init();
+//
 		dc_Exit();
 	}
 

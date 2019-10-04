@@ -67,7 +67,89 @@ static int vita_sock;
 static BOOL hal_listen_abort;
 static pthread_t _hal_listen_thread;
 
-void vita_output_Init(const char *ip)
+static void _hal_ListenerProcessWaveformPacket(struct vita_packet *packet, ssize_t length)
+{
+	BufferDescriptor buf_desc;
+	buf_desc = hal_BufferRequest(HAL_RX_BUFFER_SIZE, sizeof(Complex));
+
+	if(!buf_desc->timestamp_int) {
+		buf_desc->timestamp_int = htonl(packet->timestamp_int);
+		buf_desc->timestamp_frac_h = htonl(packet->timestamp_frac >> 32);
+		buf_desc->timestamp_frac_l = htonl(packet->timestamp_frac);
+	}
+
+// 	calculate number of samples in the buffer
+	short payload_length = ((htons(packet->length) * sizeof(uint32)) - VITA_PACKET_HEADER_SIZE);
+	if(payload_length != length - VITA_PACKET_HEADER_SIZE) {
+		output("VITA header size doesn't match bytes read from network\n");
+		hal_BufferRelease(&buf_desc);
+		return;
+	}
+
+	memcpy(buf_desc->buf_ptr, packet->payload.raw_payload, payload_length);
+	buf_desc->stream_id = htonl(packet->stream_id);
+	sched_waveform_Schedule(buf_desc);
+}
+
+static void _hal_ListenerParsePacket(void *data, ssize_t length)
+{
+	// make sure packet is long enough to inspect for VITA header info
+	if(length < VITA_PACKET_HEADER_SIZE)
+		return;
+
+	struct vita_packet *packet = (struct vita_packet *) data;
+
+	if(packet->class_id & VITA_OUI_MASK != FLEX_OUI)
+		return;
+
+	switch(packet->stream_id & STREAM_BITS_MASK) {
+		case STREAM_BITS_WAVEFORM | STREAM_BITS_IN:
+			_hal_ListenerProcessWaveformPacket(packet, length);
+			break;
+		default:
+			output("Undefined stream in %08X", htonl(packet->stream_id));
+			break;
+	}
+}
+
+static void* _hal_ListenerLoop(void* param)
+{
+	// XXX Size this correctly?
+	uint8 buf[ETH_FRAME_LEN];
+	fd_set vita_sockets;
+	int ret;
+	ssize_t bytes_received = 0;
+
+	struct pollfd fds = {
+		.fd = vita_sock,
+		.events = POLLIN,
+		.revents = 0,
+	};
+
+	output("Beginning VITA Listener Loop...\n");
+
+	while(!hal_listen_abort) {
+		ret = poll(&fds, 1, 500);
+		if(ret == 0) {
+			// timeout
+			continue;
+		} else if(ret == -1) {
+			// error
+			output(ANSI_RED "Poll failed: %s\n", strerror(errno));
+			continue;
+		}
+		if((bytes_received = recv(vita_sock, buf, sizeof(buf), 0)) == -1) {
+			output(ANSI_RED "Read failed: %s\n", strerror(errno));
+			continue;
+		}
+		_hal_ListenerParsePacket(buf, bytes_received);
+	}
+
+	output("Ending VITA Listener Loop...\n");
+	return NULL;
+}
+
+void vita_init(const char *ip)
 {
 	assert(ip != NULL);
 
@@ -106,6 +188,9 @@ void vita_output_Init(const char *ip)
 	}
 
 	output("Vita Output Init - ip = '%s' port = %d\n", ip,radio_addr.sin_port);
+
+	_hal_listen_thread = (pthread_t) NULL;
+	pthread_create(&_hal_listen_thread, NULL, &_hal_ListenerLoop, NULL);
 }
 
 static void _vita_formatWaveformPacket(Complex* buffer, uint32 samples, uint32 stream_id, uint32 packet_count,
@@ -191,93 +276,3 @@ void emit_waveform_output(BufferDescriptor buf_desc_out)
 	}
 }
 
-static void _hal_ListenerProcessWaveformPacket(struct vita_packet *packet, ssize_t length)
-{
-	BufferDescriptor buf_desc;
-	buf_desc = hal_BufferRequest(HAL_RX_BUFFER_SIZE, sizeof(Complex));
-
-	if(!buf_desc->timestamp_int) {
-		buf_desc->timestamp_int = htonl(packet->timestamp_int);
-		buf_desc->timestamp_frac_h = htonl(packet->timestamp_frac >> 32);
-		buf_desc->timestamp_frac_l = htonl(packet->timestamp_frac);
-	}
-
-// 	calculate number of samples in the buffer
-	short payload_length = ((htons(packet->length) * sizeof(uint32)) - VITA_PACKET_HEADER_SIZE);
-	if(payload_length != length - VITA_PACKET_HEADER_SIZE) {
-		output("VITA header size doesn't match bytes read from network\n");
-		hal_BufferRelease(&buf_desc);
-		return;
-	}
-
-	memcpy(buf_desc->buf_ptr, packet->payload.raw_payload, payload_length);
-	buf_desc->stream_id = htonl(packet->stream_id);
-	sched_waveform_Schedule(buf_desc);
-}
-
-static void _hal_ListenerParsePacket(void *data, ssize_t length)
-{
-	// make sure packet is long enough to inspect for VITA header info
-	if(length < VITA_PACKET_HEADER_SIZE)
-		return;
-
-	struct vita_packet *packet = (struct vita_packet *) data;
-
-	if(packet->class_id & VITA_OUI_MASK != FLEX_OUI)
-		return;
-
-	switch(packet->stream_id & STREAM_BITS_MASK) {
-		case STREAM_BITS_WAVEFORM | STREAM_BITS_IN:
-			_hal_ListenerProcessWaveformPacket(packet, length);
-			break;
-		default:
-			output("Undefined stream in %08X", htonl(packet->stream_id));
-			break;
-	}
-}
-
-static void* _hal_ListenerLoop(void* param)
-{
-	// XXX Size this correctly?
-	uint8 buf[ETH_FRAME_LEN];
-	fd_set vita_sockets;
-	int ret;
-	ssize_t bytes_received = 0;
-
-	struct pollfd fds = {
-		.fd = vita_sock,
-		.events = POLLIN,
-		.revents = 0,
-	};
-
-	output("Beginning VITA Listener Loop...\n");
-
-	while(!hal_listen_abort) {
-		ret = poll(&fds, 1, 500);
-		if(ret == 0) {
-			// timeout
-			continue;
-		} else if(ret == -1) {
-			// error
-			output(ANSI_RED "Poll failed: %s\n", strerror(errno));
-			continue;
-		}
-		if((bytes_received = recv(vita_sock, buf, sizeof(buf), 0)) == -1) {
-			output(ANSI_RED "Read failed: %s\n", strerror(errno));
-			continue;
-		}
-		_hal_ListenerParsePacket(buf, bytes_received);
-	}
-
-	output("Ending VITA Listener Loop...\n");
-	return NULL;
-}
-
-
-void hal_Listener_Init(void)
-{
-	output("Vita Listener Init: Opening socket");
-
-	_hal_listen_thread = (pthread_t) NULL;
-	pthread_create(&_hal_listen_thread, NULL, &_hal_ListenerLoop, NULL);
-}
