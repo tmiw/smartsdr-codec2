@@ -287,25 +287,22 @@ static uint32 _get_string_len(void)
     }
 }
 
-static uint32 _get_command(void)
+static uint32 _get_command()
 {
     BOOL got_command = FALSE;
-    while (!got_command && !_abort)
-    {
+    while (!got_command && !_abort) {
         // if there something in the buffer
-        if (__local.buf_len != 0)
-        {
-            if (_have_terminate_char()) return SL_TERMINATE;
+        if (__local.buf_len != 0) {
+            if (_have_terminate_char())
+            	return SL_TERMINATE;
+
             _skip_esc_sequences();
             _eat_crlf();
 
             uint32 len = _get_string_len();
-            if (len != 0)
-            {
-
+            if (len != 0) {
                 __local.command = (char*)safe_malloc(len+1);
-                if(!__local.command)
-                {
+                if(!__local.command) {
                     //output("Error allocating command (size=%u)\n", len+1);
                     __local.command = NULL;
                     return SL_OUT_OF_MEMORY;
@@ -320,10 +317,10 @@ static uint32 _get_command(void)
                 got_command = TRUE;
             }
         }
-        if (!got_command)
-        {
+        if (!got_command) {
             uint32 ret_val = _read_more_data();
-            if (ret_val != SUCCESS) return ret_val;
+            if (ret_val != SUCCESS)
+            	return ret_val;
         }
     }
     return SUCCESS;
@@ -365,30 +362,20 @@ static void* _tc_thread(void* arg)
     tc_startKeepalive();
 
     // loop receiving data from SmartSDR and sending it where it should go
-    while (!_abort)
-    {
-        result = _get_command();
-        if (result == SUCCESS)
-        {
-            if(__local.command != NULL)
-            {
-                process_status(__local.command);
-                safe_free(__local.command);
-                __local.command = NULL;
-            }
-        }
-        else if (result == SL_TERMINATE)
-        {
-            _abort = TRUE;
-            // close(client->sd); -- it's actually closed after the end: label
-            //debug(LOG_DEV,TRUE,"Client asked to close connection with a termination character");
-        }
-        else if (result == SL_CLOSE_CLIENT)
-        {
-            _abort = TRUE;
-            //close(client->sd); -- it's actually closed after the end: label
-            //debug(LOG_DEV,TRUE,"An error on the port has forced the client to close");
-        }
+    while (!_abort) {
+    	switch(_get_command()) {
+		case SUCCESS:
+			if(__local.command != NULL) {
+				process_status(__local.command);
+				safe_free(__local.command);
+				__local.command = NULL;
+			}
+			break;
+		case SL_TERMINATE:
+		case SL_CLOSE_CLIENT:
+			_abort = TRUE;
+			break;
+		}
     }
 
     close(_socket);
@@ -504,45 +491,31 @@ static void _tc_commandList_add(uint32 sequence)
 
 static uint32 _sendAPIcommand(char* command, uint32* sequence, BOOL block)
 {
-    int result;
+    ssize_t bytes_written;
     uint32 ret_val;
-
-    char* mpointer = NULL;
-    char* message = safe_malloc(MAX_API_COMMAND_SIZE);
-    memset(message, 0, MAX_API_COMMAND_SIZE);
+    int cmdlen;
+    char message[MAX_API_COMMAND_SIZE];
 
     _sequence++;
     *sequence = _sequence;
 
-    if (block) _tc_commandList_add(*sequence);
+    if (block)
+    	_tc_commandList_add(*sequence);
 
-    // first, we need to put the status header on the front of the string
-    int len = snprintf(message, MAX_API_COMMAND_SIZE, "C%d|", *sequence);
-    mpointer = message + len;
+	cmdlen = snprintf(message, MAX_API_COMMAND_SIZE, "C%d|%s\n", *sequence, command);
 
-    len += strlen(command) + 1;
-
-    strncat(mpointer, command, MAX_API_COMMAND_SIZE);
-    strncat(mpointer, "\n", MAX_API_COMMAND_SIZE);
-
-    errno = 0;
-    result = write(_socket, message, len);
-    *(message+len-1) = 0;
-    // output what we're sending as long as it is not a ping
-    // if (strstr(message, "ping") == 0)
-        //output(ANSI_GREEN "-> SmartSDR: \033[33m%s\033[m\n",command);
-    if (result == len)
-    {
-        ret_val = SUCCESS;
-    }
-    else
-    {
-        output(ANSI_RED "Traffic Cop: error writing to TCP API socket: %s\n",strerror(errno));
-        ret_val = SL_ERROR_BASE;
+    bytes_written = write(_socket, message, cmdlen);
+    if (bytes_written == -1) {
+    	output("Traffic Cop: error writing to TCP API socket: %s\n", strerror(errno));
+    	tc_abort();
+    	return SL_ERROR_BASE;
+    } else if (bytes_written != cmdlen) {
+        output(ANSI_RED "Traffic Cop: short write to TCP API socket\n");
         tc_abort();
+        return SL_ERROR_BASE;
     }
-    safe_free(message);
-    return ret_val;
+
+    return SUCCESS;
 }
 
 //! send a command to the SmartSDR API (radio) and wait for a response

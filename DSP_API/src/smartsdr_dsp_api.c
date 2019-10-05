@@ -131,6 +131,20 @@ void SmartSDR_API_Init(BOOL enable_console, const char * radio_ip)
     dc_Init(radio_ip);
 }
 
+static void *fdv_register_meters()
+{
+	char *response = NULL;
+	int status;
+
+	status = tc_sendSmartSDRcommand("meter create name=fdv-snr type=WAVEFORM min=0.0 max=100.0 unit=DB\n", TRUE, &response);
+	if(response) {
+		output("Registration returns: %s\n", response);
+		free(response);
+	} else {
+		output("Registration returned no value: %d\n", status);
+	}
+}
+
 /* *****************************************************************************
  *  uint32 register_mode(void)
  *
@@ -314,6 +328,9 @@ uint32 register_mode(void)
 
     tc_sendSmartSDRcommand("sub slice all", FALSE, NULL);
 
+//     output("Registering Meters with SmartSDR\n");
+// 	fdv_register_meters();
+//
     return SUCCESS;
 }
 

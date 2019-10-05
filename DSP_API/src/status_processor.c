@@ -164,6 +164,7 @@ static void _handle_status(char* string)
 
 void status_processor(char* string)
 {
+	output("Received String: %s\n", string);
     switch (*string)
     {
         case 'V': // version
@@ -183,13 +184,14 @@ void status_processor(char* string)
         }
         case 'R': // response
         {
-            char* save = NULL;
+            char *save = NULL;
             string++;
             uint32 val;
             sscanf(string, "%i", &val);
             char* response = strtok_r(string, "|", &save);
             response = strtok_r(NULL, "", &save);
             tc_commandList_respond(val, response);
+            output("Processing Response for command %i: %s\n", val, response);
             break;
         }
         case 'C': // command

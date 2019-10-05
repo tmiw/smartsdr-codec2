@@ -40,6 +40,7 @@
 #include "sched_waveform.h"
 #include "vita-io.h"
 #include "modem_stats.h"
+#include "traffic_cop.h"
 #include "ringbuf.h"
 
 #include "soxr.h"
