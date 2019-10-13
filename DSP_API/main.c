@@ -40,154 +40,79 @@
  *
  **************************************************************************** */
 
-#include <assert.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include <string.h>
-#include <errno.h>
-#include <stdlib.h>
-#include <stdio.h>
-#include <unistd.h>			// usleep()
-#include <netinet/in.h>		// ntohl()
-
-#include <signal.h>
-#include <execinfo.h>
-#include <ucontext.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
 
 #include "smartsdr_dsp_api.h"
+#include "discovery.h"
+#include "api-io.h"
+#include "api.h"
 
 #include "common.h"
-
 
 const char* APP_NAME = "FreeDV";            // Name of Application
 //const char* CFG_FILE = "FreeDV.cfg";        // Name of associated configuration file
 char * cfg_path = NULL;
 
-static sem_t shutdown_sem;
+struct meter_def meter_table[] = {
+	{ 0, "fdv-snr", 0.0, 100.0, "DB" },
+	{ 0, "fdv-foff", 0.0, 1000000.0, "RPM" },
+	{ 0, "fdv-clock-offset", 0.0, 1000000.0, "RPM"},
+	{ 0, "fdv-sync-quality", 0.0, 1.0, "RPM"},
+	{ 0, "", 0.0, 0.0, "" }
+};
 
-/* This structure mirrors the one found in /usr/include/asm/ucontext.h */
-typedef struct _sig_ucontext {
-	unsigned long     uc_flags;
-	struct ucontext   *uc_link;
-	stack_t           uc_stack;
-	struct sigcontext uc_mcontext;
-	sigset_t          uc_sigmask;
-} sig_ucontext_t;
-
-
-extern char *strsignal (int __sig);
-void segfault_sigaction(int signal, siginfo_t *si, void *arg)
-{
-    void *             array[50];
-    char **            messages;
-    int                size, i;
-    sig_ucontext_t *   uc;
-
-
-    uc = (sig_ucontext_t *)arg;
-
-    fprintf(stderr, "\r\n\033[41;37m Caught signal %d (%s) at address 0x%08X\033[m\n", signal, strsignal(signal), (uint32)si->si_addr);
-
-    size = backtrace(array, 50);
-
-    messages = backtrace_symbols(array, size);
-
-    /* skip first stack frame (points here) */
-    for (i = 2; i < size && messages != NULL; ++i)
-    {
-    	printf("%d-",i);
-    	fprintf(stderr, "TRACE: (%d) %s @ ", i, messages[i]);
-
-    	// Get's line number of fault
-    	char syscom[256];
-    	sprintf(syscom,"eu-addr2line -e %s %p","./freedv" , array[i]);
-    	system(syscom);
-    }
-
-    free(messages);
-    exit(EXIT_FAILURE);
-}
-
-void setup_segfault_handler(void)
-{
-    struct sigaction sa;
-
-    memset(&sa, 0, sizeof(struct sigaction));
-    sigemptyset(&sa.sa_mask);
-    sa.sa_sigaction = segfault_sigaction;
-    sa.sa_flags   = SA_RESTART | SA_SIGINFO;
-
-    sigaction(SIGSEGV, &sa, NULL);
-
-    // ignore broken pipes
-    signal(SIGPIPE, SIG_IGN);
-}
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // 	main()
 
-int main( int argc, char * argv[])
+int main(int argc, char **argv)
 {
-	const char * console_param = "--console";
-	const char * restrict_ip_param = "--ip=";
-	const char * config_path_param = "--cfg_path=";
-	BOOL enable_console = FALSE;
-	char * restrict_ip = NULL;
+	struct sockaddr_in radio_address;
+	int response_code;
 
-	/* Semaphore will be used to signal end of execution */
-	sem_init(&shutdown_sem, 0, 0);
-	/* If compiled in DEBUG then seg-faults will include a stack trace */
-	setup_segfault_handler();
+	// XXX Loop around discovery/initiate?
 
-	int i = 0;
-	for ( i = 1 ; i < argc; i++ ) {
-		if (strncmp(argv[i], console_param, strlen(console_param)) == 0 ) {
-			/* We will run with a console for input.
-			 * This is normally disabled so that the waveform can run as a
-			 * service or as a subprocess.
-			 */
-			enable_console = TRUE;
-			output(ANSI_YELLOW" WAVEFORM Version 1.0.3, Console alive.\n"ANSI_WHITE);
-		} else if ( strncmp(argv[i], restrict_ip_param, strlen(restrict_ip_param)) == 0 ) {
-			/* Free if param was passed in twice */
-			if ( restrict_ip ) {
-				safe_free( restrict_ip );
-				restrict_ip = NULL;
-			}
-			restrict_ip = safe_malloc(strlen(argv[i])+1);
-			strncpy(restrict_ip, argv[i]+strlen(restrict_ip_param), strlen(argv[i]));
-			output("Restrict IP = '%s'\n", restrict_ip);
-		} else if ( strncmp(argv[i], config_path_param ,strlen(config_path_param)) == 0 ) {
-			/* Free if param was passed in twice */
-			if ( cfg_path ) {
-				safe_free( cfg_path ) ;
-				cfg_path = NULL;
-			}
-			cfg_path = safe_malloc(strlen(argv[i])+1);
-			strncpy(cfg_path, argv[i] + strlen(config_path_param), strlen(argv[i]));
-			output("Config Path = '%s'\n", cfg_path);
-		} else {
-			output("Unknown console parameter - '%s'\n", argv[i]);
-		}
+	radio_address.sin_family = AF_INET;
+
+	if (discover_radio(&radio_address) == -1) {
+		output("Failed to find radio\n");
+		exit(1);
+	}
+	output("Found radio at %s:%d\n", inet_ntoa(radio_address.sin_addr), ntohs(radio_address.sin_port));
+
+	if (api_io_init(&radio_address) == -1) {
+		output("Couldn't connect to radio\n");
+		exit(1);
 	}
 
-	if ( ! cfg_path ) {
-		cfg_path = safe_malloc(strlen("./") + 1);
-		strncpy(cfg_path, "./", strlen("./") + 1);
-	}
+	output("Radio connected\n");
+	send_api_command("sub slice all");
 
-    SmartSDR_API_Init(enable_console, restrict_ip);
+	//  XXX These commands should be encapsulated in freedv handling code in
+	//  XXX separate file.
+	response_code = send_api_command_and_wait("waveform create name=FreeDV-USB mode=FDVU underlying_mode=USB version=2.0.0", NULL);
+	output("Got response 0x%0.8x\n", response_code);
+	send_api_command_and_wait("waveform create name=FreeDV-LSB mode=FDVL underlying_mode=LSB version=2.0.0", NULL);
+	output("Got response 0x%0.8x\n", response_code);
 
-    if ( restrict_ip ) {
-    	safe_free(restrict_ip);
-    }
+// 	response_code = send_api_command_and_wait("meter create name=fdv-snr type=WAVEFORM min=0.0 max=100.0 unit=DB", response_message);
+// 	if (response_code == 0)
+// 		output("Meter ID is %s\n", response_message);
+// 	else
+// 		output("Failed to register meter with code %d\n", response_code);
+	register_meters(meter_table);
+	fflush(stdout);
 
-    /* Wait to be notified of shutdown */
-    sem_wait(&shutdown_sem);
 
-    safe_free(cfg_path);
+	wait_for_api_io();
+	output("Complete");
 
-    return 0;
+//     SmartSDR_API_Init(enable_console, restrict_ip);
+    exit(0);
 }
 
 

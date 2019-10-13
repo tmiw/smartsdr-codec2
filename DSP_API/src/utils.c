@@ -56,10 +56,10 @@ void lock_printf_init(void)
 
 static void _output_stdio(const char *fmt, va_list args)
 {
-    pthread_mutex_lock(&_printf_mutex);
+//     pthread_mutex_lock(&_printf_mutex);
     vprintf(fmt, args);
     fflush(stdout);
-    pthread_mutex_unlock(&_printf_mutex);
+//     pthread_mutex_unlock(&_printf_mutex);
 }
 
 void output(const char *fmt,...)
@@ -157,3 +157,17 @@ void charReplace( char * string, char oldChar, char newChar )
 
 }
 
+int parse_argv(char *string, char **argv, int max_args)
+{
+	char **argptr;
+	char *argsstring;
+	int argc = 1;
+
+	argsstring = string;
+	for(argptr = argv; (*argptr = strsep(&argsstring, " \t")) != NULL; ++argc)
+		if (**argptr != '\0')
+			if (++argptr >= &argv[max_args])
+				break;
+
+	return(argc - 1);
+}

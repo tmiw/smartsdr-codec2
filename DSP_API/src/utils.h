@@ -35,6 +35,8 @@
 
 #include "common.h"
 
+#define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
+
 void lock_printf_init(void);
 void output(const char *fmt,...);
 void tsAdd(struct timespec* time1, struct timespec time2);
@@ -46,5 +48,8 @@ void* safe_malloc(size_t size);
 void safe_free(void* ptr);
 void printIP(uint32 ip);
 void charReplace( char * string, char oldChar, char newChar );
+
+int parse_argv(char *string, char **argv, int max_args);
+
 
 #endif /* UTILS_H_ */
