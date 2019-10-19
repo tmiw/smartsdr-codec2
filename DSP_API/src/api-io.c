@@ -169,6 +169,7 @@ static void process_api_line(char *line)
 	case 'M':		//  Message
 		break;
 	case 'R':		//  Response
+		output("Got response: %s", line);
 		errno = 0;
 		ret = sscanf(line, "R%d|%x|%2048mc", &sequence, &code, &message);
 		if (ret == 3 || ret == 2)
@@ -302,6 +303,7 @@ int send_api_command(char *command)
 
 	cmdlen = snprintf(message, MAX_API_COMMAND_SIZE, "C%d|%s\n", api_cmd_sequence++, command);
 
+	output("Sending %s\n", command);
     bytes_written = write(api_io_socket, message, cmdlen);
     if (bytes_written == -1) {
     	output("Error writing to TCP API socket: %s\n", strerror(errno));
@@ -335,4 +337,11 @@ int send_api_command_and_wait(char *command, char **response_message)
 	free(response);
 
 	return code;
+}
+
+int get_radio_addr(struct sockaddr_in *addr)
+{
+	socklen_t addr_len = sizeof(struct sockaddr_in);
+
+	return getpeername(api_io_socket, (struct sockaddr *) addr, &addr_len);
 }

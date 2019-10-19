@@ -38,6 +38,8 @@
 void vita_output_Init(const char * ip );
 void hal_Listener_Init(void);
 void emit_waveform_output(BufferDescriptor buf_desc_out);
+unsigned short vita_init();
+void vita_stop();
 
 #define HAL_RX_BUFFER_SIZE	128
 #define HAL_TX_BUFFER_SIZE	HAL_RX_BUFFER_SIZE

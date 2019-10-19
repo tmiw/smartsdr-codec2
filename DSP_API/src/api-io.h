@@ -32,5 +32,6 @@ int api_io_init(struct sockaddr_in *radio_addr);
 int wait_for_api_io();
 int send_api_command(char *command);
 int send_api_command_and_wait(char *command, char **response_message);
+int get_radio_addr(struct sockaddr_in *addr);
 
 #endif // API_IO_H_

@@ -32,6 +32,8 @@
 #include "api.h"
 #include "api-io.h"
 #include "utils.h"
+#include "vita-io.h"
+#include "sched_waveform.h"
 
 #define MAX_ARGS		128
 
@@ -41,6 +43,8 @@ struct dispatch_entry {
 	char name[256];
 	dispatch_handler_t handler;
 };
+
+static unsigned int num_slices = 0;
 
 int dispatch_from_table(char *message, const struct dispatch_entry *dispatch_table)
 {
@@ -70,6 +74,43 @@ int dispatch_from_table(char *message, const struct dispatch_entry *dispatch_tab
 
 static void change_to_fdv_mode() {
 	output("Slice changed to FDV mode\n");
+	unsigned short vita_port;
+	char command[256];
+
+	if (num_slices++ > 0) {
+		output("Slices using waveform, no need to start another\n");
+		return;
+	}
+
+	// Start up the processing loop
+	sched_waveform_Init();
+
+	// Start the VITA-49 processing system
+	if ((vita_port = vita_init()) == 0) {
+		output ("Cannot start VITA-49 processing loop\n");
+		return;
+	}
+	//  Inform the radio of our chosen port
+	output("Using port %hu for VITA-49 communications\n", vita_port);
+	snprintf(command, sizeof(command), "waveform set FreeDV-USB udpport=%d", vita_port);
+	send_api_command(command);
+	snprintf(command, sizeof(command), "waveform set FreeDV-LSB udpport=%d", vita_port);
+	send_api_command(command);
+}
+
+static void change_from_fdv_mode()
+{
+	if (--num_slices > 0) {
+		output("Slices still using waveform, not destroying\n");
+		return;
+	}
+// 	output("Mode = %s\n", value);
+
+	//  Stop the VITA-49 loop
+	vita_stop();
+
+	//  Stop the processing loop
+	sched_waveformThreadExit();
 }
 
 static int process_slice_status(char **argv, int argc) {
@@ -103,12 +144,16 @@ static int process_slice_status(char **argv, int argc) {
 		strsep(&value, "=");
 // 		output("Key: %s, Value: %s\n", argv[i], value);
 
+		//  XXX Need to handle switching back here.  We probably need to
+		//  XXX keep track of which slice we're using and go from there.
+		//  XXX Maybe need to handle multi-slice eventually by forking an
+		//  XXX additional processing thread for stuff.  Dunno.
 		if(strcmp("mode", argv[i]) == 0) {
 			if (strcmp("FDVU", value) == 0 ||
 			    strcmp("FDVL", value) == 0) {
 			    change_to_fdv_mode();
 			} else {
-				output("Mode = %s\n", value);
+				change_from_fdv_mode();
 			}
 		} else if (strcmp("in_use", argv[i]) == 0) {
 		} else if (strcmp("tx", argv[i]) == 0) {

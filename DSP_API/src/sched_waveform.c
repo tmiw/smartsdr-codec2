@@ -171,7 +171,7 @@ void my_put_next_rx_char(void *callback_state, char c)
 
     char* api_cmd = safe_malloc(80);
     sprintf(api_cmd, "waveform status slice=%d string=\"%s\"",0,_rx_string);
-    tc_sendSmartSDRcommand(api_cmd,FALSE,NULL);
+//     tc_sendSmartSDRcommand(api_cmd,FALSE,NULL);
     safe_free(api_cmd);
 }
 
@@ -266,6 +266,7 @@ static void* _sched_waveform_thread(void *arg)
 
 	// show that we are running
 
+	_waveform_thread_abort = FALSE;
 	output("Starting processing thread...\n");
 
 	while (_waveform_thread_abort == FALSE) {
@@ -476,6 +477,7 @@ void sched_waveformThreadExit()
 {
 	_waveform_thread_abort = TRUE;
 	sem_post(&sched_waveform_sem);
+	pthread_join(_waveform_thread, NULL);
 }
 
 uint32 cmd_freedv_mode(int requester_fd, int argc, char **argv)

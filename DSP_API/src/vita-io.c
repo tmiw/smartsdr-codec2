@@ -48,6 +48,7 @@
 #include "common.h"
 #include "hal_vita.h"
 #include "sched_waveform.h"
+#include "api-io.h"
 
 #define FORMAT_DBFS 0
 #define FORMAT_DBM 1
@@ -127,6 +128,7 @@ static void* _hal_ListenerLoop(void* param)
 	};
 
 	output("Beginning VITA Listener Loop...\n");
+	hal_listen_abort = FALSE;
 
 	while(!hal_listen_abort) {
 		ret = poll(&fds, 1, 500);
@@ -149,48 +151,59 @@ static void* _hal_ListenerLoop(void* param)
 	return NULL;
 }
 
-void vita_init(const char *ip)
+unsigned short vita_init()
 {
-	assert(ip != NULL);
-
 	struct sockaddr_in bind_addr =  {
 		.sin_family = AF_INET,
 		.sin_addr.s_addr = htonl(INADDR_ANY),
-		.sin_port = htons(VITA_49_SOURCE_PORT),
+		.sin_port = 0,
 	};
-	struct sockaddr_in radio_addr = {
-		.sin_family = AF_INET,
-		.sin_addr = {0},
-		.sin_port = htons(4993),
-	};
+	socklen_t bind_addr_len = sizeof(bind_addr);
 
-	output("\033[32mInitializing VITA-49 output engine...\n\033[m");
+	struct sockaddr_in radio_addr;
+	if (get_radio_addr(&radio_addr) == -1) {
+		output("Failed to get radio address: %s\n", strerror(errno));
+		return 0;
+	}
+	radio_addr.sin_port = htons(4993);
+
+	output("Initializing VITA-49 engine...\n");
 
 	vita_sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
 	if (vita_sock == -1) {
 		output(ANSI_RED " Failed to initialize VITA socket: %s\n", strerror(errno));
-		return;
+		return 0;
 	}
 
 	if(bind(vita_sock, (struct sockaddr *)&bind_addr, sizeof(bind_addr))) {
 		output(ANSI_RED "error binding socket: %s\n",strerror(errno));
-		return;
+		close(vita_sock);
+		return 0;
 	}
 
-	if(!inet_aton(ip, &radio_addr.sin_addr)) {
-		output(ANSI_RED "Could not convert local addr to binary\n");
-		return;
-	}
-
-	if(connect(vita_sock, (struct sockaddr *) &radio_addr, sizeof(radio_addr)) == -1) {
+	if(connect(vita_sock, (struct sockaddr *) &radio_addr, sizeof(struct sockaddr_in)) == -1) {
 		output(ANSI_RED "Couldn't connect socket: %s\n", strerror(errno));
-		return;
+		close(vita_sock);
+		return 0;
 	}
 
-	output("Vita Output Init - ip = '%s' port = %d\n", ip,radio_addr.sin_port);
+	if (getsockname(vita_sock, (struct sockaddr *) &bind_addr, &bind_addr_len) == -1) {
+		output("Couldn't get port number of VITA socket\n");
+		close(vita_sock);
+		return 0;
+	}
 
 	_hal_listen_thread = (pthread_t) NULL;
 	pthread_create(&_hal_listen_thread, NULL, &_hal_ListenerLoop, NULL);
+
+	return ntohs(bind_addr.sin_port);
+}
+
+void vita_stop()
+{
+	hal_listen_abort = TRUE;
+	pthread_join(_hal_listen_thread, NULL);
+	close(vita_sock);
 }
 
 static void _vita_formatWaveformPacket(Complex* buffer, uint32 samples, uint32 stream_id, uint32 packet_count,
