@@ -33,14 +33,13 @@
 #include <assert.h>
 #include <errno.h>
 #include <arpa/inet.h>
+#include <stdbool.h>
 
 #include "common.h"
-#include "datatypes.h"
 #include "hal_buffer.h"
 #include "sched_waveform.h"
 #include "vita-io.h"
 #include "modem_stats.h"
-#include "traffic_cop.h"
 #include "ringbuf.h"
 
 #include "soxr.h"
@@ -49,7 +48,7 @@ static pthread_rwlock_t _list_lock;
 static BufferDescriptor _root;
 
 static pthread_t _waveform_thread;
-static BOOL _waveform_thread_abort = FALSE;
+static bool _waveform_thread_abort = false;
 
 static sem_t sched_waveform_sem;
 
@@ -65,7 +64,7 @@ static void _dsp_convertBufEndian(BufferDescriptor buf_desc)
 		return;
 
 	for(i = 0; i < buf_desc->num_samples*2; i++)
-		((int32*)buf_desc->buf_ptr)[i] = htonl(((int32*)buf_desc->buf_ptr)[i]);
+		((int32_t*)buf_desc->buf_ptr)[i] = htonl(((int32_t*)buf_desc->buf_ptr)[i]);
 }
 
 static BufferDescriptor _WaveformList_UnlinkHead(void)
@@ -140,7 +139,7 @@ static struct my_callback_state  _my_cb_state;
 #define MAX_RX_STRING_LENGTH 40
 static char _rx_string[MAX_RX_STRING_LENGTH + 5];
 
-static BOOL _end_of_transmission = FALSE;
+static bool _end_of_transmission = false;
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // Callbacks for embedded ASCII stream, transmit and receive
@@ -148,9 +147,9 @@ static BOOL _end_of_transmission = FALSE;
 void my_put_next_rx_char(void *callback_state, char c)
 {
     char new_char[2];
-    if ( (uint32) c < 32 || (uint32) c > 126 ) {
+    if ( (uint32_t) c < 32 || (uint32_t) c > 126 ) {
     	/* Treat all control chars as spaces */
-    	//output(ANSI_YELLOW "Non-valid RX_STRING char. ASCII code = %d\n", (uint32) c);
+    	//output(ANSI_YELLOW "Non-valid RX_STRING char. ASCII code = %d\n", (uint32_t) c);
     	new_char[0] = (char) 0x7F;
     } else if ( c == ' ' ) {
     	/* Encode spaces differently */
@@ -171,7 +170,7 @@ void my_put_next_rx_char(void *callback_state, char c)
 
     char* api_cmd = safe_malloc(80);
     sprintf(api_cmd, "waveform status slice=%d string=\"%s\"",0,_rx_string);
-//     tc_sendSmartSDRcommand(api_cmd,FALSE,NULL);
+//     tc_sendSmartSDRcommand(api_cmd,false,NULL);
     safe_free(api_cmd);
 }
 
@@ -194,17 +193,17 @@ char my_get_next_tx_char(void *callback_state)
     return c;
 }
 
-void freedv_set_string(uint32 slice, char* string)
+void freedv_set_string(uint32_t slice, char* string)
 {
     strcpy(_my_cb_state.tx_str, string);
     _my_cb_state.ptx_str = _my_cb_state.tx_str;
     output(ANSI_MAGENTA "new TX string is '%s'\n",string);
 }
 
-void sched_waveform_setEndOfTX(BOOL end_of_transmission)
+void sched_waveform_setEndOfTX(bool end_of_transmission)
 {
 	output("Setting end of waveform\n");
-    _end_of_transmission = TRUE;
+    _end_of_transmission = true;
 }
 
 static void* _sched_waveform_thread(void *arg)
@@ -266,10 +265,10 @@ static void* _sched_waveform_thread(void *arg)
 
 	// show that we are running
 
-	_waveform_thread_abort = FALSE;
+	_waveform_thread_abort = false;
 	output("Starting processing thread...\n");
 
-	while (_waveform_thread_abort == FALSE) {
+	while (_waveform_thread_abort == false) {
 		// wait for a buffer descriptor to get posted
 		if(clock_gettime(CLOCK_REALTIME, &timeout) == -1) {
 			output("Couldn't get time.\n");
@@ -295,7 +294,7 @@ static void* _sched_waveform_thread(void *arg)
 
 			if ((buf_desc->stream_id & 1) == 0) {
 				//	Set the transmit 'initial' flag
-				_end_of_transmission = FALSE;
+				_end_of_transmission = false;
 
 				for( i = 0 ; i < PACKET_SAMPLES ; i++)
 					packet_buffer[i] = ((Complex *) buf_desc->buf_ptr)[i].real;
@@ -414,7 +413,7 @@ static void* _sched_waveform_thread(void *arg)
 		hal_BufferRelease(&buf_desc);
 	} // For Loop
 	output("Processing thread stopped...\n");
-	_waveform_thread_abort = TRUE;
+	_waveform_thread_abort = true;
 	 freedv_close(_freedvS);
 
 	free(speech_in);
@@ -465,22 +464,22 @@ void sched_waveform_Init(void)
 void freedv_set_mode(int mode)
 {
 	output("Stopping Thread...\n");
-	_waveform_thread_abort = TRUE;
+	_waveform_thread_abort = true;
 	pthread_join(_waveform_thread, NULL);
 	output("Restarting thread with new mode...\n");
 
-	_waveform_thread_abort = FALSE;
+	_waveform_thread_abort = false;
 	start_processing_thread(mode);
 }
 
 void sched_waveformThreadExit()
 {
-	_waveform_thread_abort = TRUE;
+	_waveform_thread_abort = true;
 	sem_post(&sched_waveform_sem);
 	pthread_join(_waveform_thread, NULL);
 }
 
-uint32 cmd_freedv_mode(int requester_fd, int argc, char **argv)
+uint32_t cmd_freedv_mode(int requester_fd, int argc, char **argv)
 {
 	assert (argv != NULL);
 	assert (argv[0] != NULL);

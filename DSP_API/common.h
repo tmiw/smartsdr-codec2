@@ -32,15 +32,11 @@
 
 #include <pthread.h>
 
-#include "datatypes.h"
-#include "io_utils.h"
 #include "vita-io.h"
-#include "vita49_context.h"
-#include "smartsdr_dsp_api.h"
+
 #include "utils.h"
 #include "main.h"
 #include "vita.h"
-#include "cmd.h"
 
 
 #define SUCCESS 0
@@ -62,13 +58,13 @@
 #define SL_CLASS_32BPS				(3 << 5)
 #define SL_CLASS_AUDIO_STEREO		(0x3 << 7)
 #define SL_CLASS_IEEE_754			(0x1 << 9)
-#define SL_VITA_SLICE_AUDIO_CLASS	(SL_VITA_INFO_CLASS << 16) | SL_CLASS_SAMPLING_24KHZ | SL_CLASS_32BPS | SL_CLASS_AUDIO_STEREO | SL_CLASS_IEEE_754
+#define SL_VITA_SLICE_AUDIO_CLASS	((SL_VITA_INFO_CLASS << 16) | SL_CLASS_SAMPLING_24KHZ | SL_CLASS_32BPS | SL_CLASS_AUDIO_STEREO | SL_CLASS_IEEE_754)
 
 #define SL_ERROR_BASE                   0x50000000
-#define SL_OUT_OF_MEMORY                SL_ERROR_BASE + 0x00B
-#define SL_UNKNOWN_COMMAND              SL_ERROR_BASE + 0x015
-#define SL_TERMINATE                    SL_ERROR_BASE + 0x037
-#define SL_CLOSE_CLIENT                 SL_ERROR_BASE + 0x03A
+#define SL_OUT_OF_MEMORY                (SL_ERROR_BASE + 0x00B)
+#define SL_UNKNOWN_COMMAND              (SL_ERROR_BASE + 0x015)
+#define SL_TERMINATE                    (SL_ERROR_BASE + 0x037)
+#define SL_CLOSE_CLIENT                 (SL_ERROR_BASE + 0x03A)
 
 #define ANSI_ESC                "\033["
 #define ANSI_RED 	ANSI_ESC  	"91m"

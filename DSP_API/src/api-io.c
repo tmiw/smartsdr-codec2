@@ -38,11 +38,14 @@
 #include <stdlib.h>
 #include <assert.h>
 #include <semaphore.h>
+#include <stdbool.h>
 
 #include "api-io.h"
 #include "api.h"
 #include "utils.h"
 #include "ringbuf.h"
+
+#define MAX_API_COMMAND_SIZE 1024
 
 struct response_queue_entry {
 	unsigned int sequence;
@@ -57,7 +60,7 @@ static int api_session_handle;
 static char api_version[16];
 static int api_version_major[2];
 static int api_version_minor[2];
-static BOOL api_io_abort = FALSE;
+static bool api_io_abort = false;
 static pthread_t api_io_thread;
 static struct response_queue_entry *response_queue_head = NULL;
 static pthread_mutex_t response_queue_lock;

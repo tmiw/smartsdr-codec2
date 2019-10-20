@@ -46,11 +46,9 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 
-#include "smartsdr_dsp_api.h"
 #include "discovery.h"
 #include "api-io.h"
 #include "api.h"
-#include "vita-io.h"
 
 #include "common.h"
 
@@ -59,11 +57,11 @@ const char* APP_NAME = "FreeDV";            // Name of Application
 char * cfg_path = NULL;
 
 struct meter_def meter_table[] = {
-	{ 0, "fdv-snr", 0.0, 100.0, "DB" },
-	{ 0, "fdv-foff", 0.0, 1000000.0, "RPM" },
-	{ 0, "fdv-clock-offset", 0.0, 1000000.0, "RPM"},
-	{ 0, "fdv-sync-quality", 0.0, 1.0, "RPM"},
-	{ 0, "", 0.0, 0.0, "" }
+	{ 0, "fdv-snr", 0.0f, 100.0f, "DB" },
+	{ 0, "fdv-foff", 0.0f, 1000000.0f, "RPM" },
+	{ 0, "fdv-clock-offset", 0.0f, 1000000.0f, "RPM"},
+	{ 0, "fdv-sync-quality", 0.0f, 1.0f, "RPM"},
+	{ 0, "", 0.0f, 0.0f, "" }
 };
 
 
@@ -74,8 +72,7 @@ int main(int argc, char **argv)
 {
 	struct sockaddr_in radio_address;
 	int response_code;
-	unsigned short vita_port;
-	char command[64];
+	char *response_string;
 
 	// XXX Loop around discovery/initiate?
 

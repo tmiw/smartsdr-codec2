@@ -46,14 +46,13 @@
 
 #include "vita-io.h"
 #include "common.h"
-#include "hal_vita.h"
 #include "sched_waveform.h"
 #include "api-io.h"
 
 #define FORMAT_DBFS 0
 #define FORMAT_DBM 1
 
-#define VITA_CLASS_ID_1			(uint32)VITA_OUI
+#define VITA_CLASS_ID_1			(uint32_t)VITA_OUI
 #define VITA_CLASS_ID_2			SL_VITA_INFO_CLASS << 16 | SL_VITA_IF_DATA_CLASS
 
 #define MAX_SAMPLES_PER_PACKET	(MAX_IF_DATA_PAYLOAD_SIZE/8)
@@ -65,7 +64,7 @@
 static vita_if_data waveform_packet;
 
 static int vita_sock;
-static BOOL hal_listen_abort;
+static bool hal_listen_abort;
 static pthread_t _hal_listen_thread;
 
 static void _hal_ListenerProcessWaveformPacket(struct vita_packet *packet, ssize_t length)
@@ -80,7 +79,7 @@ static void _hal_ListenerProcessWaveformPacket(struct vita_packet *packet, ssize
 	}
 
 // 	calculate number of samples in the buffer
-	short payload_length = ((htons(packet->length) * sizeof(uint32)) - VITA_PACKET_HEADER_SIZE);
+	short payload_length = ((htons(packet->length) * sizeof(uint32_t)) - VITA_PACKET_HEADER_SIZE);
 	if(payload_length != length - VITA_PACKET_HEADER_SIZE) {
 		output("VITA header size doesn't match bytes read from network\n");
 		hal_BufferRelease(&buf_desc);
@@ -89,6 +88,7 @@ static void _hal_ListenerProcessWaveformPacket(struct vita_packet *packet, ssize
 
 	memcpy(buf_desc->buf_ptr, packet->payload.raw_payload, payload_length);
 	buf_desc->stream_id = htonl(packet->stream_id);
+//	output("StreamID: 0x%08x\n", buf_desc->stream_id);
 	sched_waveform_Schedule(buf_desc);
 }
 
@@ -116,7 +116,7 @@ static void _hal_ListenerParsePacket(void *data, ssize_t length)
 static void* _hal_ListenerLoop(void* param)
 {
 	// XXX Size this correctly?
-	uint8 buf[ETH_FRAME_LEN];
+	uint8_t buf[ETH_FRAME_LEN];
 	fd_set vita_sockets;
 	int ret;
 	ssize_t bytes_received = 0;
@@ -128,7 +128,7 @@ static void* _hal_ListenerLoop(void* param)
 	};
 
 	output("Beginning VITA Listener Loop...\n");
-	hal_listen_abort = FALSE;
+	hal_listen_abort = false;
 
 	while(!hal_listen_abort) {
 		ret = poll(&fds, 1, 500);
@@ -201,13 +201,13 @@ unsigned short vita_init()
 
 void vita_stop()
 {
-	hal_listen_abort = TRUE;
+	hal_listen_abort = true;
 	pthread_join(_hal_listen_thread, NULL);
 	close(vita_sock);
 }
 
-static void _vita_formatWaveformPacket(Complex* buffer, uint32 samples, uint32 stream_id, uint32 packet_count,
-		uint32 class_id_h, uint32 class_id_l)
+static void _vita_formatWaveformPacket(Complex* buffer, uint32_t samples, uint32_t stream_id, uint32_t packet_count,
+		uint32_t class_id_h, uint32_t class_id_l)
 {
 	waveform_packet.header = htonl(
 			VITA_PACKET_TYPE_IF_DATA_WITH_STREAM_ID |
@@ -226,7 +226,7 @@ static void _vita_formatWaveformPacket(Complex* buffer, uint32 samples, uint32 s
 	memcpy(waveform_packet.payload, buffer, samples * sizeof(Complex));
 }
 
-static uint32 _waveform_packet_count = 0;
+static uint32_t _waveform_packet_count = 0;
 void emit_waveform_output(BufferDescriptor buf_desc_out)
 {
 	int samples_sent, samples_to_send;
@@ -245,17 +245,17 @@ void emit_waveform_output(BufferDescriptor buf_desc_out)
 	}
 
 	Complex* out_buffer = (Complex*) buf_desc_out->buf_ptr;
-	uint32 buf_size = buf_desc_out->num_samples;
+	uint32_t buf_size = buf_desc_out->num_samples;
 
 	// convert to big endian for network
 	for(i=0; i<buf_size; i++) {
-		*(uint32*)&out_buffer[i].real = htonl(*(uint32*)&out_buffer[i].real);
-		*(uint32*)&out_buffer[i].imag = htonl(*(uint32*)&out_buffer[i].imag);
+		*(uint32_t*)&out_buffer[i].real = htonl(*(uint32_t*)&out_buffer[i].real);
+		*(uint32_t*)&out_buffer[i].imag = htonl(*(uint32_t*)&out_buffer[i].imag);
 	}
 
 	samples_sent = 0;
 	buf_pointer = out_buffer;
-	uint32 preferred_samples_per_packet = buf_size;
+	uint32_t preferred_samples_per_packet = buf_size;
 	//output("samples_to_send: %d\n", preferred_samples_per_packet);
 
 	while (samples_sent < buf_size) {
@@ -269,7 +269,7 @@ void emit_waveform_output(BufferDescriptor buf_desc_out)
 				samples_to_send,
 				buf_desc_out->stream_id,
 				_waveform_packet_count++ & 0xF,
-				(uint32) FLEXRADIO_OUI,
+				(uint32_t) FLEXRADIO_OUI,
 				SL_VITA_SLICE_AUDIO_CLASS
 		);
 

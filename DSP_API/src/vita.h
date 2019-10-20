@@ -32,8 +32,6 @@
 
 #include <linux/if_ether.h>
 
-#include "datatypes.h"
-
 /* Packet Header Definitions */
 #define VITA_HEADER_PACKET_TYPE_MASK                0xF0000000
 #define VITA_PACKET_TYPE_IF_DATA                    0x00000000
@@ -101,19 +99,19 @@
 
 #pragma pack(push, 1)
 struct vita_packet {
-	uint8 packet_type;
-	uint8 timestamp_type;
-	uint16 length;
-	uint32 stream_id;
-	uint64 class_id;
-	uint32 timestamp_int;
-	uint64 timestamp_frac;
+	uint8_t packet_type;
+	uint8_t timestamp_type;
+	uint16_t length;
+	uint32_t stream_id;
+	uint64_t class_id;
+	uint32_t timestamp_int;
+	uint64_t timestamp_frac;
 	union {
-		uint8 raw_payload[1024];
-		uint32 if_samples[256];
+		uint8_t raw_payload[1024];
+		uint32_t if_samples[256];
 		struct meter {
-			uint16 id;
-			uint16 value;
+			uint16_t id;
+			uint16_t value;
 		} meter[256];
 	} payload;
 };
@@ -124,59 +122,59 @@ struct vita_packet {
 // #define MAX_IF_DATA_PAYLOAD_SIZE (ETH_DATA_LEN - 60 - 8 - sizeof(struct vita_header)) //  Max frame minus max IP header minus max UDP Header
 typedef struct _vita_if_data
 {
-    uint32 header;
-    uint32 stream_id;
-    uint32 class_id_h;
-    uint32 class_id_l;
-    uint32 timestamp_int;
-    uint32 timestamp_frac_h;
-    uint32 timestamp_frac_l;
-    uint8  payload[MAX_IF_DATA_PAYLOAD_SIZE];
+    uint32_t header;
+    uint32_t stream_id;
+    uint32_t class_id_h;
+    uint32_t class_id_l;
+    uint32_t timestamp_int;
+    uint32_t timestamp_frac_h;
+    uint32_t timestamp_frac_l;
+    uint8_t  payload[MAX_IF_DATA_PAYLOAD_SIZE];
 } vita_if_data, *VitaIFData;
 
 #define MAX_METER_DATA_PAYLOAD_SIZE (MAX_UDP_DATA_SIZE) //-28)
 typedef struct _vita_meter_data
 {
-    uint32 header;
-    uint32 stream_id;
-    uint32 class_id_h;
-    uint32 class_id_l;
-    uint32 timestamp_int;
-    uint32 timestamp_frac_h;
-    uint32 timestamp_frac_l;
-    uint8  payload[MAX_METER_DATA_PAYLOAD_SIZE];
+    uint32_t header;
+    uint32_t stream_id;
+    uint32_t class_id_h;
+    uint32_t class_id_l;
+    uint32_t timestamp_int;
+    uint32_t timestamp_frac_h;
+    uint32_t timestamp_frac_l;
+    uint8_t  payload[MAX_METER_DATA_PAYLOAD_SIZE];
 } vita_meter_data, *VitaMeterData;
 
 #define MAX_METER_PAYLOAD_SIZE (MAX_UDP_DATA_SIZE) //-36)
 typedef struct _vita_ext_data_meter
 {
-    uint32 header;
-    uint32 streamID;
-    uint32 classID_1;
-    uint32 classID_2;
-    uint32 integer_seconds;
-    uint64 frac_seconds;
-    uint32 extended_packet_type; // = 1 is meter
-    uint32 number_of_meters;
-    uint8  payload[MAX_METER_PAYLOAD_SIZE];
+    uint32_t header;
+    uint32_t streamID;
+    uint32_t classID_1;
+    uint32_t classID_2;
+    uint32_t integer_seconds;
+    uint64_t frac_seconds;
+    uint32_t extended_packet_type; // = 1 is meter
+    uint32_t number_of_meters;
+    uint8_t  payload[MAX_METER_PAYLOAD_SIZE];
 } vita_ext_data_meter, *VitaExtDataMeter;
 
 typedef struct _vita_timestamp
 {
-    uint32 ts_int;
+    uint32_t ts_int;
     union
     {
         struct
         {
-            uint32 ts_frac_h;
-            uint32 ts_frac_l;
+            uint32_t ts_frac_h;
+            uint32_t ts_frac_l;
         };
-        uint64 ts_frac;
+        uint64_t ts_frac;
     };
 
 } vita_timestamp, *VitaTimestamp;
 
-typedef uint32 vita_date;
+typedef uint32_t vita_date;
 
 #pragma pack()
 

@@ -71,12 +71,12 @@ void output(const char *fmt,...)
     va_end(args);
 }
 
-int32 tsSubtract(struct timespec time1, struct timespec time2)
+int32_t tsSubtract(struct timespec time1, struct timespec time2)
 {
-    int64 result;
+    int64_t result;
     result = (time1.tv_sec - time2.tv_sec) * 1000ll;
     result += (time1.tv_nsec - time2.tv_nsec) / 1000000ll;
-    return (int32)result;
+    return (int32_t)result;
 }
 
 float tsfSubtract(struct timespec time1, struct timespec time2)
@@ -88,17 +88,17 @@ float tsfSubtract(struct timespec time1, struct timespec time2)
 }
 
 //! get time since a certain time in microseconds
-uint32 usSince(struct timespec time)
+uint32_t usSince(struct timespec time)
 {
     struct timespec delay;
     clock_gettime(CLOCK_MONOTONIC, &delay);
-    uint32 diff_us = (uint32)(tsfSubtract(delay, time) * 1000.0);
+    uint32_t diff_us = (uint32_t)(tsfSubtract(delay, time) * 1000.0);
     return diff_us;
 }
 
-uint32 getIP(char* text)
+uint32_t getIP(char* text)
 {
-    uint32 ip;
+    uint32_t ip;
     int a,b,c,d;
     // get IP address
     sscanf(text, "%d.%d.%d.%d", &a,&b,&c,&d);
@@ -136,7 +136,7 @@ void safe_free(void* ptr)
     pthread_mutex_unlock(&_malloc_mutex);
 }
 
-void printIP(uint32 ip)
+void printIP(uint32_t ip)
 {
 	output("%d.%d.%d.%d\n",((ip>>24)& 0xFF),((ip>>16)& 0xFF),((ip>>8)& 0xFF),(ip & 0xFF));
 }

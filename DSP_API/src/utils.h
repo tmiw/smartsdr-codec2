@@ -41,12 +41,12 @@ void lock_printf_init(void);
 void output(const char *fmt,...);
 void tsAdd(struct timespec* time1, struct timespec time2);
 float tsfSubtract(struct timespec time1, struct timespec time2);
-uint32 usSince(struct timespec time);
-uint32 getIP(char* text);
+uint32_t usSince(struct timespec time);
+uint32_t getIP(char* text);
 void lock_malloc_init(void);
 void* safe_malloc(size_t size);
 void safe_free(void* ptr);
-void printIP(uint32 ip);
+void printIP(uint32_t ip);
 void charReplace( char * string, char oldChar, char newChar );
 
 int parse_argv(char *string, char **argv, int max_args);
