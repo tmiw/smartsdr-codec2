@@ -171,3 +171,8 @@ int parse_argv(char *string, char **argv, int max_args)
 
 	return(argc - 1);
 }
+
+short float_to_fixed(double input, char fractional_bits)
+{
+    return (short)(round(input * (1 << fractional_bits)));
+}

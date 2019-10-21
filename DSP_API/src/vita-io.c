@@ -39,10 +39,11 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include <unistd.h> // for write, usleep
+#include <unistd.h>
 #include <errno.h>
 #include <assert.h>
 #include <poll.h>
+#include <time.h>
 
 #include "vita-io.h"
 #include "common.h"
@@ -66,6 +67,12 @@ static vita_if_data waveform_packet;
 static int vita_sock;
 static bool hal_listen_abort;
 static pthread_t _hal_listen_thread;
+static uint8_t meter_sequence = 0;
+static struct sockaddr_in radio_address = {
+        .sin_family = AF_INET,
+        .sin_addr.s_addr = 0,
+        .sin_port = VITA_INPUT_PORT
+};
 
 static void _hal_ListenerProcessWaveformPacket(struct vita_packet *packet, ssize_t length)
 {
@@ -120,6 +127,8 @@ static void* _hal_ListenerLoop(void* param)
 	fd_set vita_sockets;
 	int ret;
 	ssize_t bytes_received = 0;
+	struct sockaddr_in remote_addr;
+	socklen_t remote_addr_len;
 
 	struct pollfd fds = {
 		.fd = vita_sock,
@@ -132,18 +141,36 @@ static void* _hal_ListenerLoop(void* param)
 
 	while(!hal_listen_abort) {
 		ret = poll(&fds, 1, 500);
-		if(ret == 0) {
+
+		if (ret == 0) {
 			// timeout
 			continue;
-		} else if(ret == -1) {
+		} else if (ret == -1) {
 			// error
 			output(ANSI_RED "Poll failed: %s\n", strerror(errno));
 			continue;
 		}
-		if((bytes_received = recv(vita_sock, buf, sizeof(buf), 0)) == -1) {
+
+		if ((bytes_received = recvfrom(vita_sock, buf, sizeof(buf), 0, (struct sockaddr *) &remote_addr, &remote_addr_len)) == -1) {
 			output(ANSI_RED "Read failed: %s\n", strerror(errno));
 			continue;
 		}
+
+		if (remote_addr_len != sizeof(struct sockaddr_in)) {
+		    output("Got weird socket address in recvfrom\n");
+		    continue;
+		}
+
+		if (remote_addr.sin_addr.s_addr != radio_address.sin_addr.s_addr) {
+		    output ("Got unexpected packet from: %s\n", inet_ntoa(remote_addr.sin_addr));
+		    continue;
+		}
+
+		if (remote_addr.sin_port != VITA_OUTPUT_PORT) {
+		    output ("Got unexpected packet from port %hu\n", ntohs(remote_addr.sin_port));
+		    continue;
+		}
+
 		_hal_ListenerParsePacket(buf, bytes_received);
 	}
 
@@ -165,7 +192,8 @@ unsigned short vita_init()
 		output("Failed to get radio address: %s\n", strerror(errno));
 		return 0;
 	}
-	radio_addr.sin_port = htons(4993);
+//	radio_addr.sin_port = htons(4992);  // XXX 4993?
+    radio_address.sin_addr.s_addr = radio_addr.sin_addr.s_addr;
 
 	output("Initializing VITA-49 engine...\n");
 
@@ -181,11 +209,11 @@ unsigned short vita_init()
 		return 0;
 	}
 
-	if(connect(vita_sock, (struct sockaddr *) &radio_addr, sizeof(struct sockaddr_in)) == -1) {
-		output(ANSI_RED "Couldn't connect socket: %s\n", strerror(errno));
-		close(vita_sock);
-		return 0;
-	}
+//	if(connect(vita_sock, (struct sockaddr *) &radio_addr, sizeof(struct sockaddr_in)) == -1) {
+//		output(ANSI_RED "Couldn't connect socket: %s\n", strerror(errno));
+//		close(vita_sock);
+//		return 0;
+//	}
 
 	if (getsockname(vita_sock, (struct sockaddr *) &bind_addr, &bind_addr_len) == -1) {
 		output("Couldn't get port number of VITA socket\n");
@@ -204,6 +232,34 @@ void vita_stop()
 	hal_listen_abort = true;
 	pthread_join(_hal_listen_thread, NULL);
 	close(vita_sock);
+}
+
+void vita_send_meter_packet(void *meters, size_t len)
+{
+    ssize_t bytes_sent;
+    struct vita_packet packet = {0};
+    size_t packet_len = VITA_PACKET_HEADER_SIZE_NEW(packet) + len;
+
+    packet.packet_type = 0x38;  // TODO: This is a magic number
+    packet.timestamp_type = 0x50 | (meter_sequence++ & 0x0F);
+    assert(packet_len % 4 == 0);
+    packet.length = htons(packet_len / 4); // Length is in 32-bit words
+    packet.stream_id = METER_STREAM_ID;
+    packet.class_id = METER_CLASS_ID;
+    packet.timestamp_int = time(NULL);
+    packet.timestamp_frac = 0;
+
+    memcpy(packet.payload.raw_payload, meters, len);
+
+    if ((bytes_sent = sendto(vita_sock, &packet, packet_len, 0, (struct sockaddr *) &radio_address, sizeof(radio_address))) == -1) {
+        output("Error sending meter packet: %s\n", strerror(errno));
+        return;
+    }
+
+    if (bytes_sent != packet_len) {
+        output("Short write on meter send\n");
+        return;
+    }
 }
 
 static void _vita_formatWaveformPacket(Complex* buffer, uint32_t samples, uint32_t stream_id, uint32_t packet_count,
@@ -273,7 +329,7 @@ void emit_waveform_output(BufferDescriptor buf_desc_out)
 				SL_VITA_SLICE_AUDIO_CLASS
 		);
 
-		if((bytes_sent = send(vita_sock, &waveform_packet, samples_to_send * 8 + 28, 0)) < 0) {
+		if((bytes_sent = sendto(vita_sock, &waveform_packet, samples_to_send * 8 + 28, 0, (struct sockaddr *) &radio_address, sizeof(radio_address))) < 0) {
 			output(ANSI_RED "Error sending packet: %s \n", strerror(errno));
 			continue;
 		}
@@ -288,4 +344,3 @@ void emit_waveform_output(BufferDescriptor buf_desc_out)
 
 	}
 }
-

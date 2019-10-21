@@ -41,6 +41,7 @@
 #include "vita-io.h"
 #include "modem_stats.h"
 #include "ringbuf.h"
+#include "api.h"
 
 #include "soxr.h"
 
@@ -54,6 +55,14 @@ static sem_t sched_waveform_sem;
 
 struct freedv_params {
 	int mode;
+};
+
+struct meter_def meter_table[] = {
+        { 0, "fdv-snr", 0.0f, 100.0f, "DB" },
+        { 0, "fdv-foff", 0.0f, 1000000.0f, "DB" },
+        { 0, "fdv-clock-offset", 0.0f, 1000000.0f, "DB"},
+        { 0, "fdv-sync-quality", 0.0f, 1.0f, "DB"},
+        { 0, "", 0.0f, 0.0f, "" }
 };
 
 static void _dsp_convertBufEndian(BufferDescriptor buf_desc)
@@ -206,6 +215,25 @@ void sched_waveform_setEndOfTX(bool end_of_transmission)
     _end_of_transmission = true;
 }
 
+static void freedv_send_meters(struct MODEM_STATS stats)
+{
+    short meter_block[4][2] = {0};
+    int i;
+
+//    meter_block[0][1] = float_to_fixed(stats.snr_est, 6);
+//    meter_block[1][1] = float_to_fixed(stats.foff, 6);
+//    meter_block[2][1] = float_to_fixed(stats.clock_offset, 6);
+//    meter_block[3][1] = float_to_fixed(stats.sync, 6);
+
+    for (i = 0; i < 4; ++i) {
+        meter_block[i][0] = htons(meter_table[i].id);
+//        *((uint32_t *) meter_block[i]) = htonl(*((uint32_t *) meter_block[i]));
+    }
+
+
+    vita_send_meter_packet(&meter_block, sizeof(meter_block));
+}
+
 static void* _sched_waveform_thread(void *arg)
 {
     int 	nin, nout, radio_samples;
@@ -263,7 +291,10 @@ static void* _sched_waveform_thread(void *arg)
     _my_cb_state.ptx_str = _my_cb_state.tx_str;
     freedv_set_callback_txt(_freedvS, &my_put_next_rx_char, &my_get_next_tx_char, &_my_cb_state);
 
-	// show that we are running
+    if (meter_table[0].id == 0)
+        register_meters(meter_table);
+
+    // show that we are running
 
 	_waveform_thread_abort = false;
 	output("Starting processing thread...\n");
@@ -328,6 +359,7 @@ static void* _sched_waveform_thread(void *arg)
 					freedv_get_modem_extended_stats(_freedvS, &stats);
 
 					if (stats.sync) {
+					    freedv_send_meters(stats);
 						output("SNR: %f\n", stats.snr_est);
 						output("Frequency Offset: %3.1f\n", stats.foff);
 						output("Clock Offset: %5d\n", (int) round(stats.clock_offset * 1E6));
@@ -477,27 +509,5 @@ void sched_waveformThreadExit()
 	_waveform_thread_abort = true;
 	sem_post(&sched_waveform_sem);
 	pthread_join(_waveform_thread, NULL);
-}
-
-uint32_t cmd_freedv_mode(int requester_fd, int argc, char **argv)
-{
-	assert (argv != NULL);
-	assert (argv[0] != NULL);
-
-	if(argc != 2) {
-		output("Usage: freedv-mode <1600|700D>\n");
-		return SL_BAD_COMMAND;
-	}
-
-	if(strncmp(argv[1], "1600\n", 4) == 0) {
-		output("Changing to 1600");
-		freedv_set_mode(FREEDV_MODE_1600);
-	} else if(strncmp(argv[1], "700D", 4) == 0) {
-		output("Changing to 700D\n");
-		freedv_set_mode(FREEDV_MODE_700D);
-	} else {
-		output("Unknown mode %s\n", argv[1]);
-	}
-	return SUCCESS;
 }
 

@@ -50,6 +50,7 @@ void printIP(uint32_t ip);
 void charReplace( char * string, char oldChar, char newChar );
 
 int parse_argv(char *string, char **argv, int max_args);
+short float_to_fixed(double input, char fractional_bits);
 
 
 #endif /* UTILS_H_ */

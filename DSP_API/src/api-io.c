@@ -294,6 +294,7 @@ int wait_for_api_io()
 	return *ret;
 }
 
+//  TODO: Varargs?
 int send_api_command(char *command)
 {
     ssize_t bytes_written;
