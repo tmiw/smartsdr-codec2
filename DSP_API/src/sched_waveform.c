@@ -58,7 +58,7 @@ struct freedv_params {
 };
 
 struct meter_def meter_table[] = {
-        { 0, "fdv-snr", 0.0f, 100.0f, "DB" },
+        { 0, "fdv-snr", -100.0f, 100.0f, "DB" },
         { 0, "fdv-foff", 0.0f, 1000000.0f, "DB" },
         { 0, "fdv-clock-offset", 0.0f, 1000000.0f, "DB"},
         { 0, "fdv-sync-quality", 0.0f, 1.0f, "DB"},
@@ -220,16 +220,13 @@ static void freedv_send_meters(struct MODEM_STATS stats)
     short meter_block[4][2] = {0};
     int i;
 
-//    meter_block[0][1] = float_to_fixed(stats.snr_est, 6);
-//    meter_block[1][1] = float_to_fixed(stats.foff, 6);
-//    meter_block[2][1] = float_to_fixed(stats.clock_offset, 6);
-//    meter_block[3][1] = float_to_fixed(stats.sync, 6);
+    meter_block[0][1] = htons(float_to_fixed(stats.snr_est, 6));
+    meter_block[1][1] = htons(float_to_fixed(stats.foff, 6));
+    meter_block[2][1] = htons(float_to_fixed(stats.clock_offset, 6));
+    meter_block[3][1] = htons(float_to_fixed(stats.sync, 6));
 
-    for (i = 0; i < 4; ++i) {
+    for (i = 0; i < 4; ++i)
         meter_block[i][0] = htons(meter_table[i].id);
-//        *((uint32_t *) meter_block[i]) = htonl(*((uint32_t *) meter_block[i]));
-    }
-
 
     vita_send_meter_packet(&meter_block, sizeof(meter_block));
 }
@@ -237,7 +234,7 @@ static void freedv_send_meters(struct MODEM_STATS stats)
 static void* _sched_waveform_thread(void *arg)
 {
     int 	nin, nout, radio_samples;
-    int		i;			// for loop counter
+    int		i;
     int		ret;
 
 	struct freedv_params *params = (struct freedv_params *) arg;
@@ -357,9 +354,9 @@ static void* _sched_waveform_thread(void *arg)
 
 					nout = freedv_rx(_freedvS, speech_out, demod_in);
 					freedv_get_modem_extended_stats(_freedvS, &stats);
+                    freedv_send_meters(stats);
 
 					if (stats.sync) {
-					    freedv_send_meters(stats);
 						output("SNR: %f\n", stats.snr_est);
 						output("Frequency Offset: %3.1f\n", stats.foff);
 						output("Clock Offset: %5d\n", (int) round(stats.clock_offset * 1E6));

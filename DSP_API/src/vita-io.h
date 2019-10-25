@@ -93,10 +93,10 @@ typedef enum STREAM_TYPEX ShortStreamType;
 
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
 #define VITA_OUTPUT_PORT		0x8113
-#define VITA_INPUT_PORT         0x8013
+#define VITA_INPUT_PORT         0x7F13
 #else
 #define VITA_OUTPUT_PORT		0x1381
-#define VITA_INPUT_PORT         0x1380
+#define VITA_INPUT_PORT         0x137F
 #endif
 
 

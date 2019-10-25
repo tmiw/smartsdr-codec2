@@ -84,7 +84,7 @@
 #define STREAM_BITS_OUT		    0x00000000
 #define STREAM_BITS_METER		0x00000008
 #define STREAM_BITS_WAVEFORM    0x00000001
-#define METER_STREAM_ID         0x00070000
+#define METER_STREAM_ID         0x00000088
 #define METER_CLASS_ID          ((0x02804c53LL << 32) | FLEX_OUI)
 #else
 #define VITA_OUI_MASK 			0x00ffffff
@@ -95,7 +95,7 @@
 #define STREAM_BITS_OUT		    0x00000000
 #define STREAM_BITS_METER		0x08000000
 #define STREAM_BITS_WAVEFORM    0x01000000
-#define METER_STREAM_ID         0x00000700
+#define METER_STREAM_ID         0x88000000
 #define METER_CLASS_ID          ((FLEX_OUI << 32) | 0x534c8002LL)
 #endif
 
