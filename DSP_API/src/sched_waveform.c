@@ -29,7 +29,6 @@
 #include <pthread.h>
 #include <semaphore.h>
 #include <string.h>
-#include <unistd.h>
 #include <assert.h>
 #include <errno.h>
 #include <arpa/inet.h>
@@ -62,6 +61,9 @@ struct meter_def meter_table[] = {
         { 0, "fdv-foff", 0.0f, 1000000.0f, "DB" },
         { 0, "fdv-clock-offset", 0.0f, 1000000.0f, "DB"},
         { 0, "fdv-sync-quality", 0.0f, 1.0f, "DB"},
+        { 0, "fdv-total-bits", 0.0f, 1000000.0f, "RPM" },
+        { 0, "fdv-error-bits", 0.0f, 1000000.0f, "RPM" },
+        { 0, "fdv-ber", 0.0f, 10000000.0f, "RPM" },
         { 0, "", 0.0f, 0.0f, "" }
 };
 
@@ -143,7 +145,12 @@ void sched_waveform_signal()
 
 #define PACKET_SAMPLES  128
 
-static struct my_callback_state  _my_cb_state;
+//static struct my_callback_state  _my_cb_state;
+static struct my_callback_state
+{
+    char  tx_str[80];
+    char *ptx_str;
+} _my_cb_state;
 
 #define MAX_RX_STRING_LENGTH 40
 static char _rx_string[MAX_RX_STRING_LENGTH + 5];
@@ -183,11 +190,7 @@ void my_put_next_rx_char(void *callback_state, char c)
     safe_free(api_cmd);
 }
 
-struct my_callback_state
-{
-    char  tx_str[80];
-    char *ptx_str;
-};
+
 
 char my_get_next_tx_char(void *callback_state)
 {
@@ -215,15 +218,23 @@ void sched_waveform_setEndOfTX(bool end_of_transmission)
     _end_of_transmission = true;
 }
 
-static void freedv_send_meters(struct MODEM_STATS stats)
+static void freedv_send_meters(struct freedv *freedv)
 {
-    short meter_block[4][2] = {0};
+    short meter_block[7][2] = {0};
     int i;
+    struct MODEM_STATS stats;
 
+    freedv_get_modem_extended_stats(freedv, &stats);
+
+    // XXX These need to be in order of the array definitions.
+    // XXX Yeah, I know, weak, but it works.
     meter_block[0][1] = htons(float_to_fixed(stats.snr_est, 6));
     meter_block[1][1] = htons(float_to_fixed(stats.foff, 6));
     meter_block[2][1] = htons(float_to_fixed(stats.clock_offset, 6));
     meter_block[3][1] = htons(float_to_fixed(stats.sync, 6));
+    meter_block[4][1] = htons(freedv_get_total_bits(freedv));
+    meter_block[5][1] = htons(freedv_get_total_bit_errors(freedv));
+    meter_block[6][1] = htons(float_to_fixed(freedv_get_total_bit_errors(freedv)/(1E-6+freedv_get_total_bits(freedv)), 6));
 
     for (i = 0; i < 4; ++i)
         meter_block[i][0] = htons(meter_table[i].id);
@@ -341,7 +352,6 @@ static void* _sched_waveform_thread(void *arg)
 					//  XXX to be sizeof(demod_in) * 3.
 					float resample_buffer[radio_samples];
 					size_t odone;
-					struct MODEM_STATS stats;
 
 					ringbuf_memcpy_from(resample_buffer, rx_input_buffer, radio_samples * sizeof(float));
 
@@ -353,16 +363,7 @@ static void* _sched_waveform_thread(void *arg)
 						output("Sox Error: %s\n", soxr_strerror(error));
 
 					nout = freedv_rx(_freedvS, speech_out, demod_in);
-					freedv_get_modem_extended_stats(_freedvS, &stats);
-                    freedv_send_meters(stats);
-
-					if (stats.sync) {
-						output("SNR: %f\n", stats.snr_est);
-						output("Frequency Offset: %3.1f\n", stats.foff);
-						output("Clock Offset: %5d\n", (int) round(stats.clock_offset * 1E6));
-						output("Sync Quality: %3.2f\n", stats.sync_metric);
-						output("\n");
-					}
+                    freedv_send_meters(_freedvS);
 
 					error = soxr_process (rx_upsampler,
 					                      speech_out, nout, NULL,
