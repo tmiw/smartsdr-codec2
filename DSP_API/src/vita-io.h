@@ -37,7 +37,7 @@
 
 void vita_output_Init(const char * ip );
 void hal_Listener_Init(void);
-void emit_waveform_output(BufferDescriptor buf_desc_out);
+void vita_send_audio_packet(BufferDescriptor buf_desc_out);
 unsigned short vita_init();
 void vita_stop();
 void vita_send_meter_packet(void *meters, size_t len);

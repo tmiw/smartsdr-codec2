@@ -381,7 +381,7 @@ static void* _sched_waveform_thread(void *arg)
 				} else {
 					memset (buf_desc->buf_ptr, 0, PACKET_SAMPLES * sizeof(Complex));
 				}
-				emit_waveform_output(buf_desc);
+                vita_send_audio_packet(buf_desc);
 			} else if ( (buf_desc->stream_id & 1) == 1) { //TX BUFFER
 				if(_end_of_transmission && ringbuf_is_empty(tx_output_buffer))
 					continue;
@@ -418,7 +418,7 @@ static void* _sched_waveform_thread(void *arg)
 				} else {
 					memset (buf_desc->buf_ptr, 0, PACKET_SAMPLES * sizeof(Complex));
 				}
-				emit_waveform_output(buf_desc);
+                vita_send_audio_packet(buf_desc);
 
 				//  If we're at the end, drain the buffer
 				if (_end_of_transmission) {
@@ -434,7 +434,7 @@ static void* _sched_waveform_thread(void *arg)
 							((Complex *) buf_desc->buf_ptr)[i].real =
 								((Complex *) buf_desc->buf_ptr)[i].imag =
 								packet_buffer[i];
-						emit_waveform_output(buf_desc);
+                        vita_send_audio_packet(buf_desc);
 					}
 					output("Buffer drained\n");
 				}

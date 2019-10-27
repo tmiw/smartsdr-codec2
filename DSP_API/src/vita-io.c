@@ -1,44 +1,32 @@
-///*!	\file vita-io.c
-// *	\brief transmit vita packets to the Ethernet
-// *
-// *	\copyright	Copyright 2012-2013 FlexRadio Systems.  All Rights Reserved.
-// *				Unauthorized use, duplication or distribution of this software is
-// *				strictly prohibited by law.
-// *
-// *	\date 2-APR-2012
-// *	\author Stephen Hicks, N5AC
-// *
-// */
-
-/* *****************************************************************************
+// SPDX-Licence-Identifier: GPL-3.0-or-later
+/*
+ * vita-io.c - Support for VITA-49 data socket of FlexRadio 6000 units.
  *
- *  Copyright (C) 2012-2014 FlexRadio Systems.
+ * Author: Annaliese McDermond <nh6z@nh6z.net>
  *
- *  This program is free software: you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License as published by
- *  the Free Software Foundation, either version 3 of the License, or
- *  (at your option) any later version.
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- *  GNU General Public License for more details.
- *  You should have received a copy of the GNU General Public License
- *  along with this program. If not, see <http://www.gnu.org/licenses/>.
+ * Copyright 2019 Annaliese McDermond
  *
- *  Contact Information:
- *  email: gpl<at>flexradiosystems.com
- *  Mail:  FlexRadio Systems, Suite 1-150, 4616 W. Howard LN, Austin, TX 78728
+ * This file is part of smartsdr-codec2.
  *
- * ************************************************************************** */
+ * smartsdr-codec2 is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * Foobar is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with smartsdr-codec2.  If not, see <https://www.gnu.org/licenses/>.
+ *
+ */
 
 #include <sys/socket.h>
-#include <linux/if_ether.h>
-#include <linux/if_packet.h>
 #include <netinet/in.h>
-#include <arpa/inet.h>
 #include <string.h>
 #include <stdlib.h>
-#include <stdio.h>
 #include <unistd.h>
 #include <errno.h>
 #include <assert.h>
@@ -50,31 +38,12 @@
 #include "sched_waveform.h"
 #include "api-io.h"
 
-#define FORMAT_DBFS 0
-#define FORMAT_DBM 1
-
-#define VITA_CLASS_ID_1			(uint32_t)VITA_OUI
-#define VITA_CLASS_ID_2			SL_VITA_INFO_CLASS << 16 | SL_VITA_IF_DATA_CLASS
-
-#define MAX_SAMPLES_PER_PACKET	(MAX_IF_DATA_PAYLOAD_SIZE/8)
-#define MAX_BINS_PER_PACKET 700
-
-#define MAX_COUNTED_STREAMS 100
-#define COUNTER_INTERVAL_MS 1000
-
-static vita_if_data waveform_packet;
-
 static int vita_sock;
-static bool hal_listen_abort;
-static pthread_t _hal_listen_thread;
+static bool vita_processing_thread_abort;
+static pthread_t vita_processing_thread;
 static uint8_t meter_sequence = 0;
-static struct sockaddr_in radio_address = {
-        .sin_family = AF_INET,
-        .sin_addr.s_addr = 0,
-        .sin_port = VITA_INPUT_PORT
-};
 
-static void _hal_ListenerProcessWaveformPacket(struct vita_packet *packet, ssize_t length)
+static void vita_process_waveform_packet(struct vita_packet *packet, ssize_t length)
 {
 	BufferDescriptor buf_desc;
 	buf_desc = hal_BufferRequest(HAL_RX_BUFFER_SIZE, sizeof(Complex));
@@ -93,26 +62,24 @@ static void _hal_ListenerProcessWaveformPacket(struct vita_packet *packet, ssize
 		return;
 	}
 
-	memcpy(buf_desc->buf_ptr, packet->payload.raw_payload, payload_length);
+	memcpy(buf_desc->buf_ptr, packet->raw_payload, payload_length);
 	buf_desc->stream_id = htonl(packet->stream_id);
 //	output("StreamID: 0x%08x\n", buf_desc->stream_id);
 	sched_waveform_Schedule(buf_desc);
 }
 
-static void _hal_ListenerParsePacket(void *data, ssize_t length)
+static void vita_parse_packet(struct vita_packet *packet, size_t packet_len)
 {
 	// make sure packet is long enough to inspect for VITA header info
-	if(length < VITA_PACKET_HEADER_SIZE)
-		return;
+	if (packet_len < VITA_PACKET_HEADER_SIZE)
+        return;
 
-	struct vita_packet *packet = (struct vita_packet *) data;
-
-	if(packet->class_id & VITA_OUI_MASK != FLEX_OUI)
+	if((packet->class_id & VITA_OUI_MASK) != FLEX_OUI)
 		return;
 
 	switch(packet->stream_id & STREAM_BITS_MASK) {
 		case STREAM_BITS_WAVEFORM | STREAM_BITS_IN:
-			_hal_ListenerProcessWaveformPacket(packet, length);
+            vita_process_waveform_packet(packet, packet_len);
 			break;
 		default:
 			output("Undefined stream in %08X", htonl(packet->stream_id));
@@ -120,15 +87,11 @@ static void _hal_ListenerParsePacket(void *data, ssize_t length)
 	}
 }
 
-static void* _hal_ListenerLoop(void* param)
+static void* vita_processing_loop(void* param)
 {
-	// XXX Size this correctly?
-	uint8_t buf[ETH_FRAME_LEN];
-	fd_set vita_sockets;
+	struct vita_packet packet;
 	int ret;
 	ssize_t bytes_received = 0;
-	struct sockaddr_in remote_addr;
-	socklen_t remote_addr_len;
 
 	struct pollfd fds = {
 		.fd = vita_sock,
@@ -137,9 +100,9 @@ static void* _hal_ListenerLoop(void* param)
 	};
 
 	output("Beginning VITA Listener Loop...\n");
-	hal_listen_abort = false;
+    vita_processing_thread_abort = false;
 
-	while(!hal_listen_abort) {
+	while(!vita_processing_thread_abort) {
 		ret = poll(&fds, 1, 500);
 
 		if (ret == 0) {
@@ -147,31 +110,16 @@ static void* _hal_ListenerLoop(void* param)
 			continue;
 		} else if (ret == -1) {
 			// error
-			output(ANSI_RED "Poll failed: %s\n", strerror(errno));
+			output("VITA poll failed: %s\n", strerror(errno));
 			continue;
 		}
 
-		if ((bytes_received = recv(vita_sock, buf, sizeof(buf), 0)) == -1) {
-			output(ANSI_RED "Read failed: %s\n", strerror(errno));
+		if ((bytes_received = recv(vita_sock, &packet, sizeof(packet), 0)) == -1) {
+			output("VITA read failed: %s\n", strerror(errno));
 			continue;
 		}
 
-//		if (remote_addr_len != sizeof(struct sockaddr_in)) {
-//		    output("Got weird socket address in recvfrom\n");
-//		    continue;
-//		}
-//
-//		if (remote_addr.sin_addr.s_addr != radio_address.sin_addr.s_addr) {
-//		    output ("Got unexpected packet from: %s\n", inet_ntoa(remote_addr.sin_addr));
-//		    continue;
-//		}
-//
-//		if (remote_addr.sin_port != VITA_OUTPUT_PORT) {
-//		    output ("Got unexpected packet from port %hu\n", ntohs(remote_addr.sin_port));
-//		    continue;
-//		}
-
-		_hal_ListenerParsePacket(buf, bytes_received);
+        vita_parse_packet(&packet, bytes_received);
 	}
 
 	output("Ending VITA Listener Loop...\n");
@@ -192,8 +140,7 @@ unsigned short vita_init()
 		output("Failed to get radio address: %s\n", strerror(errno));
 		return 0;
 	}
-	radio_addr.sin_port = htons(4993);  // XXX 4993?
-    radio_address.sin_addr.s_addr = radio_addr.sin_addr.s_addr;
+	radio_addr.sin_port = htons(4993);
 
 	output("Initializing VITA-49 engine...\n");
 
@@ -221,126 +168,82 @@ unsigned short vita_init()
 		return 0;
 	}
 
-	_hal_listen_thread = (pthread_t) NULL;
-	pthread_create(&_hal_listen_thread, NULL, &_hal_ListenerLoop, NULL);
+    vita_processing_thread = (pthread_t) NULL;
+	pthread_create(&vita_processing_thread, NULL, &vita_processing_loop, NULL);
 
 	return ntohs(bind_addr.sin_port);
 }
 
 void vita_stop()
 {
-	hal_listen_abort = true;
-	pthread_join(_hal_listen_thread, NULL);
+    vita_processing_thread_abort = true;
+	pthread_join(vita_processing_thread, NULL);
 	close(vita_sock);
 }
 
-void vita_send_meter_packet(void *meters, size_t len)
+static void vita_send_packet(struct vita_packet *packet,  size_t payload_len)
 {
     ssize_t bytes_sent;
-    struct vita_packet packet = {0};
-    size_t packet_len = VITA_PACKET_HEADER_SIZE_NEW(packet) + len;
+    size_t packet_len = VITA_PACKET_HEADER_SIZE + payload_len;
 
-    packet.packet_type = 0x38;  // TODO: This is a magic number
-    packet.timestamp_type = 0x50 | (meter_sequence++ & 0x0F);
+    //  XXX Lots of magic numbers here!
+    packet->timestamp_type = 0x50u | (packet->timestamp_type & 0x0Fu);
     assert(packet_len % 4 == 0);
-    packet.length = htons(packet_len / 4); // Length is in 32-bit words
-    packet.stream_id = METER_STREAM_ID;
-    packet.class_id = METER_CLASS_ID;
-    packet.timestamp_int = time(NULL);
-    packet.timestamp_frac = 0;
+    packet->length = htons(packet_len / 4); // Length is in 32-bit words
 
-    memcpy(packet.payload.raw_payload, meters, len);
+    packet->timestamp_int = time(NULL);
+    packet->timestamp_frac = 0;
 
-    if ((bytes_sent = send(vita_sock, &packet, packet_len, 0)) == -1) {
-        output("Error sending meter packet: %s\n", strerror(errno));
+    if ((bytes_sent = send(vita_sock, packet, packet_len, 0)) == -1) {
+        output("Error sending vita packet: %s\n", strerror(errno));
         return;
     }
 
     if (bytes_sent != packet_len) {
-        output("Short write on meter send\n");
+        output("Short write on vita send\n");
         return;
     }
 }
 
-static void _vita_formatWaveformPacket(Complex* buffer, uint32_t samples, uint32_t stream_id, uint32_t packet_count,
-		uint32_t class_id_h, uint32_t class_id_l)
+void vita_send_meter_packet(void *meters, size_t len)
 {
-	waveform_packet.header = htonl(
-			VITA_PACKET_TYPE_IF_DATA_WITH_STREAM_ID |
-			VITA_HEADER_CLASS_ID_PRESENT |
-			VITA_TSI_OTHER |
-			VITA_TSF_SAMPLE_COUNT |
-			(packet_count << 16) |
-			(7+samples*2));
-	waveform_packet.stream_id = htonl(stream_id);
-	waveform_packet.class_id_h =  htonl(class_id_h);
-	waveform_packet.class_id_l =  htonl(class_id_l);
-	waveform_packet.timestamp_int = 0;
-	waveform_packet.timestamp_frac_h = 0;
-	waveform_packet.timestamp_frac_l = 0;
+    struct vita_packet packet = {0};
 
-	memcpy(waveform_packet.payload, buffer, samples * sizeof(Complex));
+    packet.packet_type = VITA_PACKET_TYPE_EXT_DATA_WITH_STREAM_ID;
+    packet.stream_id = METER_STREAM_ID;
+    packet.class_id = METER_CLASS_ID;
+    packet.timestamp_type = meter_sequence++;
+
+    assert(len < sizeof(packet.raw_payload));
+    memcpy(packet.raw_payload, meters, len);
+
+    vita_send_packet(&packet, len);
 }
 
-static uint32_t _waveform_packet_count = 0;
-void emit_waveform_output(BufferDescriptor buf_desc_out)
+static uint32_t audio_sequence = 0;
+void vita_send_audio_packet(BufferDescriptor buf_desc_out)
 {
-	int samples_sent, samples_to_send;
-	Complex *buf_pointer;
-	ssize_t bytes_sent;
-	int i;
+    struct vita_packet packet = {0};
+    unsigned int i, j;
 
-	// XXX Assertions?
-	if (buf_desc_out == NULL) {
-		output(ANSI_RED "buf_desc_out is NULL\n");
-		return;
-	}
-	if (buf_desc_out->buf_ptr == NULL) {
-		output(ANSI_RED "buf_desc_out->buf_ptr is NULL\n");
-		return;
-	}
+    packet.packet_type = VITA_PACKET_TYPE_IF_DATA_WITH_STREAM_ID;
+    packet.stream_id = htonl(buf_desc_out->stream_id);
+    packet.class_id = AUDIO_CLASS_ID;
+    packet.timestamp_type = audio_sequence++;
 
-	Complex* out_buffer = (Complex*) buf_desc_out->buf_ptr;
-	uint32_t buf_size = buf_desc_out->num_samples;
+    assert(buf_desc_out != NULL);
+    assert(buf_desc_out->buf_ptr != NULL);
 
-	// convert to big endian for network
-	for(i=0; i<buf_size; i++) {
-		*(uint32_t*)&out_buffer[i].real = htonl(*(uint32_t*)&out_buffer[i].real);
-		*(uint32_t*)&out_buffer[i].imag = htonl(*(uint32_t*)&out_buffer[i].imag);
-	}
+    for(i = 0, j = 0; i < buf_desc_out->num_samples * 2; ++i) {
+        packet.if_samples[j] = htonl(((uint32_t *) buf_desc_out->buf_ptr)[i]);
+        if (j == (sizeof(packet.if_samples) / sizeof(packet.if_samples[0]) - 1)) {
+            vita_send_packet(&packet, (j + 1) * sizeof(packet.if_samples[0]));
+            j = 0;
+        } else {
+            ++j;
+        }
+    }
 
-	samples_sent = 0;
-	buf_pointer = out_buffer;
-	uint32_t preferred_samples_per_packet = buf_size;
-	//output("samples_to_send: %d\n", preferred_samples_per_packet);
-
-	while (samples_sent < buf_size) {
-		if ((buf_size - samples_sent) > preferred_samples_per_packet)
-			samples_to_send = preferred_samples_per_packet;
-		else
-			samples_to_send =  buf_size - samples_sent;
-
-		_vita_formatWaveformPacket(
-				buf_pointer,
-				samples_to_send,
-				buf_desc_out->stream_id,
-				_waveform_packet_count++ & 0xF,
-				(uint32_t) FLEXRADIO_OUI,
-				SL_VITA_SLICE_AUDIO_CLASS
-		);
-
-		if((bytes_sent = send(vita_sock, &waveform_packet, samples_to_send * 8 + 28, 0)) < 0) {
-			output(ANSI_RED "Error sending packet: %s \n", strerror(errno));
-			continue;
-		}
-
-		if(bytes_sent != samples_to_send * 8 + 28) {
-			output(ANSI_RED "Short write in emit_waveform_output");
-			continue;
-		}
-
-		buf_pointer += samples_to_send;
-		samples_sent += samples_to_send;
-
-	}
+    if (j > 0)
+        vita_send_packet(&packet, j * sizeof(packet.if_samples[0]));
 }
