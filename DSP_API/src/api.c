@@ -77,11 +77,11 @@ static void change_to_fdv_mode(unsigned char slice) {
 	char command[256];
 
 	if (active_slice != 0) {
-	    output("Slice %ud is using the waveform\n", active_slice);
+	    output("Slice %u is using the waveform\n", active_slice);
 	    return;
 	}
 
-    output("Slice %ud changed to FDV mode\n", slice);
+    output("Slice %u changed to FDV mode\n", slice);
 	active_slice = slice;
 
     // Start up the processing loop
@@ -94,12 +94,9 @@ static void change_to_fdv_mode(unsigned char slice) {
 	}
 	//  Inform the radio of our chosen port
 	output("Using port %hu for VITA-49 communications\n", vita_port);
-	snprintf(command, sizeof(command), "waveform set FreeDV-USB udpport=%d", vita_port);
-	send_api_command(command);
-	snprintf(command, sizeof(command), "waveform set FreeDV-LSB udpport=%d", vita_port);
-	send_api_command(command);
-	snprintf(command, sizeof(command), "client udpport %d", vita_port);
-	send_api_command(command);
+	send_api_command("waveform set FreeDV-USB udpport=%d", vita_port);
+    send_api_command("waveform set FreeDV-LSB udpport=%d", vita_port);
+    send_api_command("client udpport %d", vita_port);
 }
 
 static void change_from_fdv_mode(unsigned char slice)

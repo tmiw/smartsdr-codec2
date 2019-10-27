@@ -345,15 +345,15 @@ unsigned int send_api_command(char *command, ...)
     char message[MAX_API_COMMAND_SIZE];
     char message_format[MAX_API_COMMAND_SIZE + 4];
 
-	cmdlen = snprintf(message_format, MAX_API_COMMAND_SIZE, "C%d|%s\n", api_cmd_sequence++, command);
+	snprintf(message_format, MAX_API_COMMAND_SIZE, "C%d|%s\n", api_cmd_sequence++, command);
 	if (cmdlen < 0)
 	    return -1;
 
 	va_start(ap, command);
-	vsnprintf(message, sizeof(message), message_format, ap);
+	cmdlen = vsnprintf(message, sizeof(message), message_format, ap);
 	va_end(ap);
 
-	output("Sending %s\n", command);
+	output("Sending %s", message);
     bytes_written = write(api_io_socket, message, (size_t) cmdlen);
     if (bytes_written == -1) {
     	output("Error writing to TCP API socket: %s\n", strerror(errno));
