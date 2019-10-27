@@ -184,10 +184,10 @@ void my_put_next_rx_char(void *callback_state, char c)
     }
     //output(ANSI_MAGENTA "new string = '%s'\n",_rx_string);
 
-    char* api_cmd = safe_malloc(80);
+    char* api_cmd = malloc(80);
     sprintf(api_cmd, "waveform status slice=%d string=\"%s\"",0,_rx_string);
 //     tc_sendSmartSDRcommand(api_cmd,false,NULL);
-    safe_free(api_cmd);
+    free(api_cmd);
 }
 
 
@@ -288,10 +288,10 @@ static void* _sched_waveform_thread(void *arg)
     ringbuf_t tx_input_buffer = ringbuf_new (tx_speech_samples * sizeof(float) * 4);
     ringbuf_t tx_output_buffer = ringbuf_new (tx_modem_samples * sizeof(float) * 4);
 
-    short *speech_in = (short *) safe_malloc(freedv_get_n_speech_samples(_freedvS) * sizeof(short));
-    short *speech_out = (short *) safe_malloc(freedv_get_n_speech_samples(_freedvS) * sizeof(short));
-    short *demod_in = (short *) safe_malloc(freedv_get_n_max_modem_samples(_freedvS) * sizeof(short));
-    short *mod_out = (short *) safe_malloc(freedv_get_n_nom_modem_samples(_freedvS) * sizeof(short));
+    short *speech_in = (short *) malloc(freedv_get_n_speech_samples(_freedvS) * sizeof(short));
+    short *speech_out = (short *) malloc(freedv_get_n_speech_samples(_freedvS) * sizeof(short));
+    short *demod_in = (short *) malloc(freedv_get_n_max_modem_samples(_freedvS) * sizeof(short));
+    short *mod_out = (short *) malloc(freedv_get_n_nom_modem_samples(_freedvS) * sizeof(short));
     //  XXX Probably should memalign here.
 
     // Clear TX string
@@ -480,7 +480,7 @@ void sched_waveform_Init(void)
 	pthread_rwlock_init(&_list_lock, NULL);
 
 	pthread_rwlock_wrlock(&_list_lock);
-	_root = (BufferDescriptor)safe_malloc(sizeof(buffer_descriptor));
+	_root = (BufferDescriptor)malloc(sizeof(buffer_descriptor));
 	memset(_root, 0, sizeof(buffer_descriptor));
 	_root->next = _root;
 	_root->prev = _root;

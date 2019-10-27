@@ -41,8 +41,8 @@
 BufferDescriptor hal_BufferRequest(uint32_t num_samples, uint32_t sample_size)
 {
 	// allocate memory for the new object
-//	BufferDescriptor buf = (BufferDescriptor)safe_malloc(sizeof(buffer_descriptor));
-	BufferDescriptor buf = (BufferDescriptor)safe_malloc(sizeof(buffer_descriptor));		// substitute non-thread-safe malloc
+//	BufferDescriptor buf = (BufferDescriptor)malloc(sizeof(buffer_descriptor));
+	BufferDescriptor buf = (BufferDescriptor)malloc(sizeof(buffer_descriptor));		// substitute non-thread-safe malloc
 //	debug(LOG_DEV, TRUE, "\033[32m+ buf_desc alloc: %08X %04X\033[m", (uint32_t)buf, sizeof(buffer_descriptor));
 	if(!buf)
 	{
@@ -56,8 +56,8 @@ BufferDescriptor hal_BufferRequest(uint32_t num_samples, uint32_t sample_size)
 	// initialize size and allocate buffer
 	buf->num_samples = num_samples;
 	buf->sample_size = sample_size;
-//	buf->buf_ptr = safe_malloc(num_samples * sample_size);
-	buf->buf_ptr = safe_malloc(num_samples * sample_size);	// substitute non-thread-safe malloc
+//	buf->buf_ptr = malloc(num_samples * sample_size);
+	buf->buf_ptr = malloc(num_samples * sample_size);	// substitute non-thread-safe malloc
 //	debug(LOG_DEV, TRUE, "\033[35m+     buf alloc: %08X, %04X\033[m", (uint32_t)buf->buf_ptr, num_samples * sample_size);
 	if(!buf->buf_ptr)
 	{
