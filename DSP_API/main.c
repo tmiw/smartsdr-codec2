@@ -46,26 +46,13 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 
-#include "smartsdr_dsp_api.h"
 #include "discovery.h"
 #include "api-io.h"
 #include "api.h"
-#include "vita-io.h"
 
 #include "common.h"
 
 const char* APP_NAME = "FreeDV";            // Name of Application
-//const char* CFG_FILE = "FreeDV.cfg";        // Name of associated configuration file
-char * cfg_path = NULL;
-
-struct meter_def meter_table[] = {
-	{ 0, "fdv-snr", 0.0, 100.0, "DB" },
-	{ 0, "fdv-foff", 0.0, 1000000.0, "RPM" },
-	{ 0, "fdv-clock-offset", 0.0, 1000000.0, "RPM"},
-	{ 0, "fdv-sync-quality", 0.0, 1.0, "RPM"},
-	{ 0, "", 0.0, 0.0, "" }
-};
-
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // 	main()
@@ -74,10 +61,9 @@ int main(int argc, char **argv)
 {
 	struct sockaddr_in radio_address;
 	int response_code;
-	unsigned short vita_port;
-	char command[64];
+	char *response_string;
 
-	// XXX Loop around discovery/initiate?
+	// XXX TODO: Loop around discovery/initiate?
 
 	radio_address.sin_family = AF_INET;
 
@@ -95,19 +81,11 @@ int main(int argc, char **argv)
 	output("Radio connected\n");
 	send_api_command("sub slice all");
 
-	register_meters(meter_table);
-	fflush(stdout);
-
-// 	radio_address.sin_port = htons(4993);
-// 	if ((vita_port = vita_init(&radio_address)) == 0) {
-// 		output ("Cannot start VITA-49 processing loop\n");
-// 		//  Close the API socket here?
-// 		exit(0);
-// 	}
-
 	//  XXX These commands should be encapsulated in freedv handling code in
 	//  XXX separate file.
-	send_api_command("waveform create name=FreeDV-USB mode=FDVU underlying_mode=USB version=2.0.0");
+	response_code = send_api_command_and_wait("waveform create name=FreeDV-USB mode=FDVU underlying_mode=USB version=2.0.0", &response_string);
+	output("Received response code 0x%08x as '%s'\n", response_code, response_string);
+	free(response_string);
 // 	send_api_command("waveform set FreeDV-USB rx_filter low_cut=180");
 // 	send_api_command("waveform set FreeDV-USB rx_filter high_cut=2900");
 // 	send_api_command("waveform set FreeDV-USB rx_filter depth=8");
@@ -115,12 +93,6 @@ int main(int argc, char **argv)
 // 	send_api_command("waveform set FreeDV-LSB rx_filter low_cut=180");
 // 	send_api_command("waveform set FreeDV-LSB rx_filter high_cut=2900");
 // 	send_api_command("waveform set FreeDV-LSB rx_filter depth=8");
-//
-// 	output("Using port %hu for VITA-49 communications\n", vita_port);
-// 	snprintf(command, sizeof(command), "waveform set FreeDV-USB udpport=%d", vita_port);
-// 	send_api_command(command);
-// 	snprintf(command, sizeof(command), "waveform set FreeDV-LSB udpport=%d", vita_port);
-// 	send_api_command(command);
 
 	wait_for_api_io();
 	output("Complete");

@@ -21,13 +21,10 @@ endif("${CMAKE_SOURCE_DIR}" STREQUAL "${CMAKE_BINARY_DIR}")
 option(BUILD_SHARED_LIBS
     "Build shared library. Set to OFF for static library." OFF)
 
-set(CMAKE_EXE_LINKER_FLAGS "-static -static-libgcc -fopenmp")
+#set(CMAKE_EXE_LINKER_FLAGS "-static -static-libgcc -fopenmp")
+set(CMAKE_EXE_LINKER_FLAGS "-fopenmp")
 set(CMAKE_FIND_LIBRARY_SUFFIXES ".a")
 set(CMAKE_BUILD_TYPE Debug)
-#set(CMAKE_SHARED_LIBRARY_LINK_C_FLAGS "")
-#set(BUILD_SHARED OFF)
-#set_property(GLOBAL PROPERTY LINK_SEARCH_START_STATIC ON)
-#set_property(GLOBAL PROPERTY LINK_SEARCH_END_STATIC ON)
 
 add_subdirectory(codec2 EXCLUDE_FROM_ALL)
 add_subdirectory(soxr-code EXCLUDE_FROM_ALL)

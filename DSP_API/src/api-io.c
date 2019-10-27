@@ -20,7 +20,7 @@
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with Foobar.  If not, see <https://www.gnu.org/licenses/>.
+ * along with smartsdr-codec2.  If not, see <https://www.gnu.org/licenses/>.
  *
  */
 
@@ -38,31 +38,35 @@
 #include <stdlib.h>
 #include <assert.h>
 #include <semaphore.h>
+#include <stdbool.h>
 
 #include "api-io.h"
 #include "api.h"
 #include "utils.h"
+#include "ringbuf.h"
+
+#define MAX_API_COMMAND_SIZE 1024
 
 struct response_queue_entry {
-	int sequence;
-	int code;
+	unsigned int sequence;
+	unsigned int code;
 	char *message;
 	struct response_queue_entry *next;
 };
 
 static int api_io_socket;
-static int api_cmd_sequence;
+static unsigned int api_cmd_sequence;
 static int api_session_handle;
 static char api_version[16];
 static int api_version_major[2];
 static int api_version_minor[2];
-static BOOL api_io_abort = FALSE;
+static bool api_io_abort = false;
 static pthread_t api_io_thread;
 static struct response_queue_entry *response_queue_head = NULL;
 static pthread_mutex_t response_queue_lock;
 static sem_t response_queue_sem;
 
-static void add_sequence_to_response_queue(int sequence)
+static void add_sequence_to_response_queue(unsigned int sequence)
 {
 	struct response_queue_entry *new_entry, *current_entry;
 
@@ -82,7 +86,7 @@ static void add_sequence_to_response_queue(int sequence)
 	pthread_mutex_unlock(&response_queue_lock);
 }
 
-static void complete_response_entry(int sequence, int code, char *message)
+static void complete_response_entry(int sequence, unsigned int code, char *message)
 {
 	struct response_queue_entry *current_entry;
 
@@ -102,7 +106,7 @@ static void complete_response_entry(int sequence, int code, char *message)
 	pthread_mutex_unlock(&response_queue_lock);
 }
 
-static struct response_queue_entry *pop_response_with_sequence(int sequence)
+static struct response_queue_entry *pop_response_with_sequence(unsigned int sequence)
 {
 	struct response_queue_entry *current_entry, *last_entry;
 
@@ -135,7 +139,7 @@ static struct response_queue_entry *pop_response_with_sequence(int sequence)
 
 static void process_api_line(char *line)
 {
-	char *message, *end;
+	char *message;
 	int sequence, code, ret, handle;
 
 	switch(*line) {
@@ -201,10 +205,10 @@ static void process_api_line(char *line)
 
 static void *api_io_processing_loop(void *arg)
 {
-	ssize_t bytes_read;
-	char buf[2048];
-	char *line, *next_line;
+	char *line;
 	int ret;
+	ringbuf_t buffer;
+	size_t eol;
 
 	struct pollfd fds = {
 		.fd = api_io_socket,
@@ -212,6 +216,7 @@ static void *api_io_processing_loop(void *arg)
 		.revents = 0,
 	};
 
+	buffer = ringbuf_new(4096);
 
 	output("Beginning API IO Loop...\n");
 	while (!api_io_abort) {
@@ -224,32 +229,27 @@ static void *api_io_processing_loop(void *arg)
 			output(ANSI_RED "Poll failed: %s\n", strerror(errno));
 			continue;
 		}
-		if ((bytes_read = read(api_io_socket, buf, sizeof(buf) - 1)) == -1) {
-			output("API IO read failed: %s\n", strerror(errno));
-			close(api_io_socket);
-			return (void *) -1;
+
+		if (ringbuf_read(api_io_socket, buffer, ringbuf_bytes_free(buffer)) == -1) {
+            output("API IO read failed: %s\n", strerror(errno));
+            close(api_io_socket);
+            return (void *) -1;
 		}
 
-		//  Null terminate the string so that strsep(3) doesn't go off the
-		//  rails.
-		buf[bytes_read] = '\0';
-		line = next_line = buf;
+        while ((eol = ringbuf_findchr(buffer, '\n', 0)) != ringbuf_bytes_used(buffer)) {
+            line = (char *) malloc(eol + 1);
+            ringbuf_memcpy_from(line, buffer, eol + 1);
 
-		//  XXX We're not guaranteed to get whole lines here that aren't
-		//  XXX broken up, but we really should.  We need to handle the
-		//  XXX case, though, that the completion of a line could come in
-		//  XXX another read request.
-		while ((line = strsep(&next_line, "\n\r")) != NULL) {
-			if (strlen(line) > 0)
-				process_api_line(line);
-
-//			This is true if we don't have a return at the end of the string.
-//			see above issue.
-// 			if(next_line == NULL)
-// 				output("Bing!\n");
-		}
+            if (eol != 0) {
+                line[eol] = '\0';
+                process_api_line(line);
+            }
+            free(line);
+        }
 	}
 	output("API IO Loop Ending...\n");
+
+	ringbuf_free(&buffer);
 
 	close(api_io_socket);
 
@@ -294,17 +294,19 @@ int wait_for_api_io()
 	return *ret;
 }
 
+//  TODO: Varargs?
 int send_api_command(char *command)
 {
     ssize_t bytes_written;
-    uint32 ret_val;
     int cmdlen;
     char message[MAX_API_COMMAND_SIZE];
 
 	cmdlen = snprintf(message, MAX_API_COMMAND_SIZE, "C%d|%s\n", api_cmd_sequence++, command);
+	if (snprintf < 0)
+	    return -1;
 
 	output("Sending %s\n", command);
-    bytes_written = write(api_io_socket, message, cmdlen);
+    bytes_written = write(api_io_socket, message, (size_t) cmdlen);
     if (bytes_written == -1) {
     	output("Error writing to TCP API socket: %s\n", strerror(errno));
     	return -1;
@@ -318,7 +320,7 @@ int send_api_command(char *command)
 
 int send_api_command_and_wait(char *command, char **response_message)
 {
-	int sequence, code;
+	unsigned int code, sequence;
 	struct response_queue_entry *response;
 
 	if ((sequence = send_api_command(command)) == -1)

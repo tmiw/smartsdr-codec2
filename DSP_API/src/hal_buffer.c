@@ -38,12 +38,12 @@
 //#include "platform.h"
 #include "hal_buffer.h"
 
-BufferDescriptor hal_BufferRequest(uint32 num_samples, uint32 sample_size)
+BufferDescriptor hal_BufferRequest(uint32_t num_samples, uint32_t sample_size)
 {
 	// allocate memory for the new object
-//	BufferDescriptor buf = (BufferDescriptor)safe_malloc(sizeof(buffer_descriptor));
-	BufferDescriptor buf = (BufferDescriptor)safe_malloc(sizeof(buffer_descriptor));		// substitute non-thread-safe malloc
-//	debug(LOG_DEV, TRUE, "\033[32m+ buf_desc alloc: %08X %04X\033[m", (uint32)buf, sizeof(buffer_descriptor));
+//	BufferDescriptor buf = (BufferDescriptor)malloc(sizeof(buffer_descriptor));
+	BufferDescriptor buf = (BufferDescriptor)malloc(sizeof(buffer_descriptor));		// substitute non-thread-safe malloc
+//	debug(LOG_DEV, TRUE, "\033[32m+ buf_desc alloc: %08X %04X\033[m", (uint32_t)buf, sizeof(buffer_descriptor));
 	if(!buf)
 	{
 //		debug(LOG_DEV, TRUE, "Error allocating buffer descriptor (size=%u)", sizeof(buffer_descriptor));
@@ -56,9 +56,9 @@ BufferDescriptor hal_BufferRequest(uint32 num_samples, uint32 sample_size)
 	// initialize size and allocate buffer
 	buf->num_samples = num_samples;
 	buf->sample_size = sample_size;
-//	buf->buf_ptr = safe_malloc(num_samples * sample_size);
-	buf->buf_ptr = safe_malloc(num_samples * sample_size);	// substitute non-thread-safe malloc
-//	debug(LOG_DEV, TRUE, "\033[35m+     buf alloc: %08X, %04X\033[m", (uint32)buf->buf_ptr, num_samples * sample_size);
+//	buf->buf_ptr = malloc(num_samples * sample_size);
+	buf->buf_ptr = malloc(num_samples * sample_size);	// substitute non-thread-safe malloc
+//	debug(LOG_DEV, TRUE, "\033[35m+     buf alloc: %08X, %04X\033[m", (uint32_t)buf->buf_ptr, num_samples * sample_size);
 	if(!buf->buf_ptr)
 	{
 //		debug(LOG_DEV, TRUE, "Error allocating buffer descriptor (size=%u)", num_samples * sample_size);
@@ -80,13 +80,13 @@ void hal_BufferRelease(BufferDescriptor *buf_desc)
 	{
 		if((*buf_desc)->buf_ptr != NULL)
 		{
-//			debug(LOG_DEV, TRUE, "\033[35m-     releasing buf: %08X\033[m", (uint32)(*buf_desc)->buf_ptr);
+//			debug(LOG_DEV, TRUE, "\033[35m-     releasing buf: %08X\033[m", (uint32_t)(*buf_desc)->buf_ptr);
 //			safe_free((*buf_desc)->buf_ptr);
 			free((*buf_desc)->buf_ptr);		// un-thread-safe free
 			(*buf_desc)->buf_ptr = NULL;
 		}
 
-//		debug(LOG_DEV, TRUE, "\033[32m- releasing buf_desc: %08X\033[m", (uint32)*buf_desc);
+//		debug(LOG_DEV, TRUE, "\033[32m- releasing buf_desc: %08X\033[m", (uint32_t)*buf_desc);
 //		safe_free(*buf_desc);
 		free(*buf_desc);		// un-thread-safe free
 		*buf_desc = NULL;

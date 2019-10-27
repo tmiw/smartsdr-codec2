@@ -70,7 +70,7 @@ int parse_discovery_packet(struct vita_packet *packet, struct sockaddr_in *addr)
 	}
 
 	//  XXX Probably better KVP handling here.  Maybe steal something?
-	argsstring = packet->payload.raw_payload;
+	argsstring = packet->raw_payload;
 	for(argptr = argv; (*argptr = strsep(&argsstring, " \t")) != NULL; ++argc)
 		if (**argptr != '\0')
 			if (++argptr >= &argv[MAX_DISCOVERY_ARGC])

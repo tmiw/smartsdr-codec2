@@ -20,21 +20,22 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with Foobar.  If not, see <https://www.gnu.org/licenses/>.
- *
+ * XXX TODO: Fix Foobars in licensing
  */
 #ifndef API_H
 #define API_H
 
 struct meter_def {
-	int	id;
+	unsigned short	id;
 	char name[32];
 	float min;
 	float max;
-	char unit[16];  // XXX enum?
+	char unit[16];  // TODO: enum?
 };
 
 int process_status_message(char *message);
 int process_waveform_command(char *message);
 int register_meters(struct meter_def *meters);
+int find_meter_by_name(struct meter_def *meters, char *name);
 
 #endif // API_H_

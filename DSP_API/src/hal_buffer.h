@@ -32,8 +32,7 @@
 #define _BUFFER_H
 
 #include <pthread.h>
-
-#include "datatypes.h"
+#include <stdint.h>
 
 #pragma pack(4)
 
@@ -43,19 +42,19 @@
 typedef struct _buffer_descriptor
 {
 	//! stream id showing where this buffer came from
-	uint32 stream_id;
+	uint32_t stream_id;
 	//! number of samples stored in the buffer
-	uint32 num_samples; // in frames
+	uint32_t num_samples; // in frames
 	//! size in bytes of the sample
-	uint32 sample_size;
+	uint32_t sample_size;
 	//! pointer to the buffer containing the samples
 	void* buf_ptr; // pointer to the actual buffer
 	//! integer timestamp for the first sample in the buffer (see VITA-49 spec)
-	uint32 timestamp_int;
+	uint32_t timestamp_int;
 	//! high 32-bits of fractional portion of the timestamp
-	uint32 timestamp_frac_h;
+	uint32_t timestamp_frac_h;
 	//! low 32-bits of the fractional portion of the timestamp
-	uint32 timestamp_frac_l;
+	uint32_t timestamp_frac_l;
 	//! pointer to next buffer descriptor
 	struct _buffer_descriptor* next;
 	//! pointer to previous buffer descriptor
@@ -67,7 +66,7 @@ typedef struct _buffer_descriptor
 
 //! Requests a Buffer to be used in the DSP
 //! \param size Number of frames to allocate
-BufferDescriptor hal_BufferRequest(uint32 size, uint32 sample_size);
+BufferDescriptor hal_BufferRequest(uint32_t size, uint32_t sample_size);
 
 //! To be called once finished with the buffer (cleanup)
 //! \param buf Buffer that is no longer in use

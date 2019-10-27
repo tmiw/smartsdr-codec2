@@ -26,6 +26,6 @@
 #ifndef MAIN_H_
 #define MAIN_H_
 
-void freedv_set_string(uint32 slice, char* string);
+void freedv_set_string(uint32_t slice, char* string);
 
 #endif /* MAIN_H_ */

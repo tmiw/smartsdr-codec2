@@ -29,19 +29,18 @@
 #include <pthread.h>
 #include <semaphore.h>
 #include <string.h>
-#include <unistd.h>
 #include <assert.h>
 #include <errno.h>
 #include <arpa/inet.h>
+#include <stdbool.h>
 
 #include "common.h"
-#include "datatypes.h"
 #include "hal_buffer.h"
 #include "sched_waveform.h"
 #include "vita-io.h"
 #include "modem_stats.h"
-#include "traffic_cop.h"
 #include "ringbuf.h"
+#include "api.h"
 
 #include "soxr.h"
 
@@ -49,12 +48,23 @@ static pthread_rwlock_t _list_lock;
 static BufferDescriptor _root;
 
 static pthread_t _waveform_thread;
-static BOOL _waveform_thread_abort = FALSE;
+static bool _waveform_thread_abort = false;
 
 static sem_t sched_waveform_sem;
 
 struct freedv_params {
 	int mode;
+};
+
+struct meter_def meter_table[] = {
+        { 0, "fdv-snr", -100.0f, 100.0f, "DB" },
+        { 0, "fdv-foff", 0.0f, 1000000.0f, "DB" },
+        { 0, "fdv-clock-offset", 0.0f, 1000000.0f, "DB"},
+        { 0, "fdv-sync-quality", 0.0f, 1.0f, "DB"},
+        { 0, "fdv-total-bits", 0.0f, 1000000.0f, "RPM" },
+        { 0, "fdv-error-bits", 0.0f, 1000000.0f, "RPM" },
+        { 0, "fdv-ber", 0.0f, 10000000.0f, "RPM" },
+        { 0, "", 0.0f, 0.0f, "" }
 };
 
 static void _dsp_convertBufEndian(BufferDescriptor buf_desc)
@@ -65,7 +75,7 @@ static void _dsp_convertBufEndian(BufferDescriptor buf_desc)
 		return;
 
 	for(i = 0; i < buf_desc->num_samples*2; i++)
-		((int32*)buf_desc->buf_ptr)[i] = htonl(((int32*)buf_desc->buf_ptr)[i]);
+		((int32_t*)buf_desc->buf_ptr)[i] = htonl(((int32_t*)buf_desc->buf_ptr)[i]);
 }
 
 static BufferDescriptor _WaveformList_UnlinkHead(void)
@@ -135,12 +145,17 @@ void sched_waveform_signal()
 
 #define PACKET_SAMPLES  128
 
-static struct my_callback_state  _my_cb_state;
+//static struct my_callback_state  _my_cb_state;
+static struct my_callback_state
+{
+    char  tx_str[80];
+    char *ptx_str;
+} _my_cb_state;
 
 #define MAX_RX_STRING_LENGTH 40
 static char _rx_string[MAX_RX_STRING_LENGTH + 5];
 
-static BOOL _end_of_transmission = FALSE;
+static bool _end_of_transmission = false;
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // Callbacks for embedded ASCII stream, transmit and receive
@@ -148,9 +163,9 @@ static BOOL _end_of_transmission = FALSE;
 void my_put_next_rx_char(void *callback_state, char c)
 {
     char new_char[2];
-    if ( (uint32) c < 32 || (uint32) c > 126 ) {
+    if ( (uint32_t) c < 32 || (uint32_t) c > 126 ) {
     	/* Treat all control chars as spaces */
-    	//output(ANSI_YELLOW "Non-valid RX_STRING char. ASCII code = %d\n", (uint32) c);
+    	//output(ANSI_YELLOW "Non-valid RX_STRING char. ASCII code = %d\n", (uint32_t) c);
     	new_char[0] = (char) 0x7F;
     } else if ( c == ' ' ) {
     	/* Encode spaces differently */
@@ -169,17 +184,13 @@ void my_put_next_rx_char(void *callback_state, char c)
     }
     //output(ANSI_MAGENTA "new string = '%s'\n",_rx_string);
 
-    char* api_cmd = safe_malloc(80);
+    char* api_cmd = malloc(80);
     sprintf(api_cmd, "waveform status slice=%d string=\"%s\"",0,_rx_string);
-//     tc_sendSmartSDRcommand(api_cmd,FALSE,NULL);
-    safe_free(api_cmd);
+//     tc_sendSmartSDRcommand(api_cmd,false,NULL);
+    free(api_cmd);
 }
 
-struct my_callback_state
-{
-    char  tx_str[80];
-    char *ptx_str;
-};
+
 
 char my_get_next_tx_char(void *callback_state)
 {
@@ -194,23 +205,47 @@ char my_get_next_tx_char(void *callback_state)
     return c;
 }
 
-void freedv_set_string(uint32 slice, char* string)
+void freedv_set_string(uint32_t slice, char* string)
 {
     strcpy(_my_cb_state.tx_str, string);
     _my_cb_state.ptx_str = _my_cb_state.tx_str;
     output(ANSI_MAGENTA "new TX string is '%s'\n",string);
 }
 
-void sched_waveform_setEndOfTX(BOOL end_of_transmission)
+void sched_waveform_setEndOfTX(bool end_of_transmission)
 {
 	output("Setting end of waveform\n");
-    _end_of_transmission = TRUE;
+    _end_of_transmission = true;
+}
+
+static void freedv_send_meters(struct freedv *freedv)
+{
+    short meter_block[7][2] = {0};
+    int i;
+    struct MODEM_STATS stats;
+
+    freedv_get_modem_extended_stats(freedv, &stats);
+
+    // XXX These need to be in order of the array definitions.
+    // XXX Yeah, I know, weak, but it works.
+    meter_block[0][1] = htons(float_to_fixed(stats.snr_est, 6));
+    meter_block[1][1] = htons(float_to_fixed(stats.foff, 6));
+    meter_block[2][1] = htons(float_to_fixed(stats.clock_offset, 6));
+    meter_block[3][1] = htons(float_to_fixed(stats.sync, 6));
+    meter_block[4][1] = htons(freedv_get_total_bits(freedv));
+    meter_block[5][1] = htons(freedv_get_total_bit_errors(freedv));
+    meter_block[6][1] = htons(float_to_fixed(freedv_get_total_bit_errors(freedv)/(1E-6+freedv_get_total_bits(freedv)), 6));
+
+    for (i = 0; i < 4; ++i)
+        meter_block[i][0] = htons(meter_table[i].id);
+
+    vita_send_meter_packet(&meter_block, sizeof(meter_block));
 }
 
 static void* _sched_waveform_thread(void *arg)
 {
     int 	nin, nout, radio_samples;
-    int		i;			// for loop counter
+    int		i;
     int		ret;
 
 	struct freedv_params *params = (struct freedv_params *) arg;
@@ -253,10 +288,10 @@ static void* _sched_waveform_thread(void *arg)
     ringbuf_t tx_input_buffer = ringbuf_new (tx_speech_samples * sizeof(float) * 4);
     ringbuf_t tx_output_buffer = ringbuf_new (tx_modem_samples * sizeof(float) * 4);
 
-    short *speech_in = (short *) safe_malloc(freedv_get_n_speech_samples(_freedvS) * sizeof(short));
-    short *speech_out = (short *) safe_malloc(freedv_get_n_speech_samples(_freedvS) * sizeof(short));
-    short *demod_in = (short *) safe_malloc(freedv_get_n_max_modem_samples(_freedvS) * sizeof(short));
-    short *mod_out = (short *) safe_malloc(freedv_get_n_nom_modem_samples(_freedvS) * sizeof(short));
+    short *speech_in = (short *) malloc(freedv_get_n_speech_samples(_freedvS) * sizeof(short));
+    short *speech_out = (short *) malloc(freedv_get_n_speech_samples(_freedvS) * sizeof(short));
+    short *demod_in = (short *) malloc(freedv_get_n_max_modem_samples(_freedvS) * sizeof(short));
+    short *mod_out = (short *) malloc(freedv_get_n_nom_modem_samples(_freedvS) * sizeof(short));
     //  XXX Probably should memalign here.
 
     // Clear TX string
@@ -264,12 +299,15 @@ static void* _sched_waveform_thread(void *arg)
     _my_cb_state.ptx_str = _my_cb_state.tx_str;
     freedv_set_callback_txt(_freedvS, &my_put_next_rx_char, &my_get_next_tx_char, &_my_cb_state);
 
-	// show that we are running
+    if (meter_table[0].id == 0)
+        register_meters(meter_table);
 
-	_waveform_thread_abort = FALSE;
+    // show that we are running
+
+	_waveform_thread_abort = false;
 	output("Starting processing thread...\n");
 
-	while (_waveform_thread_abort == FALSE) {
+	while (_waveform_thread_abort == false) {
 		// wait for a buffer descriptor to get posted
 		if(clock_gettime(CLOCK_REALTIME, &timeout) == -1) {
 			output("Couldn't get time.\n");
@@ -295,7 +333,7 @@ static void* _sched_waveform_thread(void *arg)
 
 			if ((buf_desc->stream_id & 1) == 0) {
 				//	Set the transmit 'initial' flag
-				_end_of_transmission = FALSE;
+				_end_of_transmission = false;
 
 				for( i = 0 ; i < PACKET_SAMPLES ; i++)
 					packet_buffer[i] = ((Complex *) buf_desc->buf_ptr)[i].real;
@@ -314,7 +352,6 @@ static void* _sched_waveform_thread(void *arg)
 					//  XXX to be sizeof(demod_in) * 3.
 					float resample_buffer[radio_samples];
 					size_t odone;
-					struct MODEM_STATS stats;
 
 					ringbuf_memcpy_from(resample_buffer, rx_input_buffer, radio_samples * sizeof(float));
 
@@ -326,15 +363,7 @@ static void* _sched_waveform_thread(void *arg)
 						output("Sox Error: %s\n", soxr_strerror(error));
 
 					nout = freedv_rx(_freedvS, speech_out, demod_in);
-					freedv_get_modem_extended_stats(_freedvS, &stats);
-
-					if (stats.sync) {
-						output("SNR: %f\n", stats.snr_est);
-						output("Frequency Offset: %3.1f\n", stats.foff);
-						output("Clock Offset: %5d\n", (int) round(stats.clock_offset * 1E6));
-						output("Sync Quality: %3.2f\n", stats.sync_metric);
-						output("\n");
-					}
+                    freedv_send_meters(_freedvS);
 
 					error = soxr_process (rx_upsampler,
 					                      speech_out, nout, NULL,
@@ -352,7 +381,7 @@ static void* _sched_waveform_thread(void *arg)
 				} else {
 					memset (buf_desc->buf_ptr, 0, PACKET_SAMPLES * sizeof(Complex));
 				}
-				emit_waveform_output(buf_desc);
+                vita_send_audio_packet(buf_desc);
 			} else if ( (buf_desc->stream_id & 1) == 1) { //TX BUFFER
 				if(_end_of_transmission && ringbuf_is_empty(tx_output_buffer))
 					continue;
@@ -389,7 +418,7 @@ static void* _sched_waveform_thread(void *arg)
 				} else {
 					memset (buf_desc->buf_ptr, 0, PACKET_SAMPLES * sizeof(Complex));
 				}
-				emit_waveform_output(buf_desc);
+                vita_send_audio_packet(buf_desc);
 
 				//  If we're at the end, drain the buffer
 				if (_end_of_transmission) {
@@ -405,7 +434,7 @@ static void* _sched_waveform_thread(void *arg)
 							((Complex *) buf_desc->buf_ptr)[i].real =
 								((Complex *) buf_desc->buf_ptr)[i].imag =
 								packet_buffer[i];
-						emit_waveform_output(buf_desc);
+                        vita_send_audio_packet(buf_desc);
 					}
 					output("Buffer drained\n");
 				}
@@ -414,7 +443,7 @@ static void* _sched_waveform_thread(void *arg)
 		hal_BufferRelease(&buf_desc);
 	} // For Loop
 	output("Processing thread stopped...\n");
-	_waveform_thread_abort = TRUE;
+	_waveform_thread_abort = true;
 	 freedv_close(_freedvS);
 
 	free(speech_in);
@@ -451,7 +480,7 @@ void sched_waveform_Init(void)
 	pthread_rwlock_init(&_list_lock, NULL);
 
 	pthread_rwlock_wrlock(&_list_lock);
-	_root = (BufferDescriptor)safe_malloc(sizeof(buffer_descriptor));
+	_root = (BufferDescriptor)malloc(sizeof(buffer_descriptor));
 	memset(_root, 0, sizeof(buffer_descriptor));
 	_root->next = _root;
 	_root->prev = _root;
@@ -465,40 +494,18 @@ void sched_waveform_Init(void)
 void freedv_set_mode(int mode)
 {
 	output("Stopping Thread...\n");
-	_waveform_thread_abort = TRUE;
+	_waveform_thread_abort = true;
 	pthread_join(_waveform_thread, NULL);
 	output("Restarting thread with new mode...\n");
 
-	_waveform_thread_abort = FALSE;
+	_waveform_thread_abort = false;
 	start_processing_thread(mode);
 }
 
 void sched_waveformThreadExit()
 {
-	_waveform_thread_abort = TRUE;
+	_waveform_thread_abort = true;
 	sem_post(&sched_waveform_sem);
 	pthread_join(_waveform_thread, NULL);
-}
-
-uint32 cmd_freedv_mode(int requester_fd, int argc, char **argv)
-{
-	assert (argv != NULL);
-	assert (argv[0] != NULL);
-
-	if(argc != 2) {
-		output("Usage: freedv-mode <1600|700D>\n");
-		return SL_BAD_COMMAND;
-	}
-
-	if(strncmp(argv[1], "1600\n", 4) == 0) {
-		output("Changing to 1600");
-		freedv_set_mode(FREEDV_MODE_1600);
-	} else if(strncmp(argv[1], "700D", 4) == 0) {
-		output("Changing to 700D\n");
-		freedv_set_mode(FREEDV_MODE_700D);
-	} else {
-		output("Unknown mode %s\n", argv[1]);
-	}
-	return SUCCESS;
 }
 

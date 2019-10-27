@@ -37,9 +37,11 @@
 
 void vita_output_Init(const char * ip );
 void hal_Listener_Init(void);
-void emit_waveform_output(BufferDescriptor buf_desc_out);
+void vita_send_audio_packet(BufferDescriptor buf_desc_out);
 unsigned short vita_init();
 void vita_stop();
+void vita_send_meter_packet(void *meters, size_t len);
+
 
 #define HAL_RX_BUFFER_SIZE	128
 #define HAL_TX_BUFFER_SIZE	HAL_RX_BUFFER_SIZE
@@ -88,5 +90,14 @@ typedef enum STREAM_TYPEX ShortStreamType;
 /* Waveform defines */
 #define HAL_STATUS_WFM_SIZE_WRONG 17
 #define HAL_STATUS_WFM_NO_STREAM 18
+
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+#define VITA_OUTPUT_PORT		0x8113
+#define VITA_INPUT_PORT         0x7F13
+#else
+#define VITA_OUTPUT_PORT		0x1381
+#define VITA_INPUT_PORT         0x137F
+#endif
+
 
 #endif /* VITA_OUTPUT_H_ */

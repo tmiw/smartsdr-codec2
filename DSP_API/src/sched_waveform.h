@@ -34,6 +34,8 @@
 #ifndef SCHED_WAVEFORM_H_
 #define SCHED_WAVEFORM_H_
 
+#include <stdbool.h>
+
 #include "hal_buffer.h"
 #include "freedv_api.h"
 
@@ -42,7 +44,7 @@ void sched_waveform_Init(void);
 void sched_waveform_signal(void);
 void sched_waveformThreadExit(void);
 void freedv_set_mode(int mode);
-uint32 cmd_freedv_mode(int requester_fd, int argc, char **argv);
+uint32_t cmd_freedv_mode(int requester_fd, int argc, char **argv);
 
-void sched_waveform_setEndOfTX(BOOL end_of_transmission);
+void sched_waveform_setEndOfTX(bool end_of_transmission);
 #endif /* SCHED_WAVEFORM_H_ */

@@ -30,15 +30,13 @@
 
 #include <math.h>
 
-#include "datatypes.h"
-
 typedef struct _complex {
   float real; // left
   float imag; // right
 } Complex;
 
-#define CReal(x) ((x.real))
-#define CImag(x) ((x.imag))
+#define CReal(x) (x).real
+#define CImag(x) (x).imag
 
 extern Complex Cplx(float x, float y);
 

@@ -44,7 +44,7 @@ struct dispatch_entry {
 	dispatch_handler_t handler;
 };
 
-static unsigned int num_slices = 0;
+static unsigned char active_slice = 0;
 
 int dispatch_from_table(char *message, const struct dispatch_entry *dispatch_table)
 {
@@ -72,17 +72,19 @@ int dispatch_from_table(char *message, const struct dispatch_entry *dispatch_tab
 	return -1;
 }
 
-static void change_to_fdv_mode() {
-	output("Slice changed to FDV mode\n");
+static void change_to_fdv_mode(unsigned char slice) {
 	unsigned short vita_port;
 	char command[256];
 
-	if (num_slices++ > 0) {
-		output("Slices using waveform, no need to start another\n");
-		return;
+	if (active_slice != 0) {
+	    output("Slice %ud is using the waveform\n", active_slice);
+	    return;
 	}
 
-	// Start up the processing loop
+    output("Slice %ud changed to FDV mode\n", slice);
+	active_slice = slice;
+
+    // Start up the processing loop
 	sched_waveform_Init();
 
 	// Start the VITA-49 processing system
@@ -96,21 +98,26 @@ static void change_to_fdv_mode() {
 	send_api_command(command);
 	snprintf(command, sizeof(command), "waveform set FreeDV-LSB udpport=%d", vita_port);
 	send_api_command(command);
+	snprintf(command, sizeof(command), "client udpport %d", vita_port);
+	send_api_command(command);
 }
 
-static void change_from_fdv_mode()
+static void change_from_fdv_mode(unsigned char slice)
 {
-	if (--num_slices > 0) {
-		output("Slices still using waveform, not destroying\n");
-		return;
-	}
+
 // 	output("Mode = %s\n", value);
+
+    if (slice != active_slice) {
+        output("Slice %ud is not active, ignoring\n", slice);
+    }
 
 	//  Stop the VITA-49 loop
 	vita_stop();
 
 	//  Stop the processing loop
 	sched_waveformThreadExit();
+
+	active_slice = 0;
 }
 
 static int process_slice_status(char **argv, int argc) {
@@ -151,9 +158,9 @@ static int process_slice_status(char **argv, int argc) {
 		if(strcmp("mode", argv[i]) == 0) {
 			if (strcmp("FDVU", value) == 0 ||
 			    strcmp("FDVL", value) == 0) {
-			    change_to_fdv_mode();
+                change_to_fdv_mode(slice);
 			} else {
-				change_from_fdv_mode();
+                change_from_fdv_mode(slice);
 			}
 		} else if (strcmp("in_use", argv[i]) == 0) {
 		} else if (strcmp("tx", argv[i]) == 0) {
@@ -201,6 +208,7 @@ static const struct dispatch_entry command_dispatch_table[] = {
 int process_status_message(char *message)
 {
 	assert(message != NULL);
+	output("Processing Status Message: %s\n", message);
 	return dispatch_from_table(message, status_dispatch_table);
 }
 
@@ -219,7 +227,7 @@ int register_meters(struct meter_def *meters)
 	assert(meters != NULL);
 
 	for (i = 0; strlen(meters[i].name) != 0; ++i) {
-		snprintf(meter_cmd, sizeof(meter_cmd), "meter create name=%s type=WAVEFORM min=%f max=%f unit=%s", meters[i].name, meters[i].min, meters[i].max, meters[i].unit);
+		snprintf(meter_cmd, sizeof(meter_cmd), "meter create name=%s type=WAVEFORM min=%f max=%f unit=%s fps=20", meters[i].name, meters[i].min, meters[i].max, meters[i].unit);
 		response_code = send_api_command_and_wait(meter_cmd, &response_message);
 
 		if (response_code != 0) {
@@ -237,5 +245,16 @@ int register_meters(struct meter_def *meters)
 		output("Allocated meter id %d\n", meters[i].id);
 		free(response_message);
 	}
+}
+
+int find_meter_by_name(struct meter_def *meters, char *name)
+{
+    int i;
+
+    for (i = 0; strlen(meters[i].name) != 0; ++i)
+        if (strcmp(meters[i].name, name) == 0)
+            return meters[i].id;
+
+    return -1;
 }
 
