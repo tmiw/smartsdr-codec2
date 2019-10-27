@@ -39,6 +39,8 @@
 #include <assert.h>
 #include <semaphore.h>
 #include <stdbool.h>
+#include <stdarg.h>
+#include <limits.h>
 
 #include "api-io.h"
 #include "api.h"
@@ -56,7 +58,7 @@ struct response_queue_entry {
 
 static int api_io_socket;
 static unsigned int api_cmd_sequence;
-static int api_session_handle;
+static unsigned int api_session_handle;
 static char api_version[16];
 static int api_version_major[2];
 static int api_version_minor[2];
@@ -294,16 +296,21 @@ int wait_for_api_io()
 	return *ret;
 }
 
-//  TODO: Varargs?
-int send_api_command(char *command)
+unsigned int send_api_command(char *command, ...)
 {
     ssize_t bytes_written;
     int cmdlen;
+    va_list ap;
     char message[MAX_API_COMMAND_SIZE];
+    char message_format[MAX_API_COMMAND_SIZE + 4];
 
-	cmdlen = snprintf(message, MAX_API_COMMAND_SIZE, "C%d|%s\n", api_cmd_sequence++, command);
-	if (snprintf < 0)
+	cmdlen = snprintf(message_format, MAX_API_COMMAND_SIZE, "C%d|%s\n", api_cmd_sequence++, command);
+	if (cmdlen < 0)
 	    return -1;
+
+	va_start(ap, command);
+	vsnprintf(message, sizeof(message), message_format, ap);
+	va_end(ap);
 
 	output("Sending %s\n", command);
     bytes_written = write(api_io_socket, message, (size_t) cmdlen);
@@ -318,13 +325,16 @@ int send_api_command(char *command)
     return api_cmd_sequence - 1;
 }
 
-int send_api_command_and_wait(char *command, char **response_message)
+unsigned int send_api_command_and_wait(char *command, char **response_message, ...)
 {
 	unsigned int code, sequence;
 	struct response_queue_entry *response;
+	va_list ap;
 
-	if ((sequence = send_api_command(command)) == -1)
+	va_start(ap, response_message);
+	if ((sequence = send_api_command(command, ap)) == -1)
 		return sequence;
+	va_end(ap);
 
 	add_sequence_to_response_queue(sequence);
 

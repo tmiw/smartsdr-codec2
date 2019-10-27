@@ -55,9 +55,9 @@ static void vita_process_waveform_packet(struct vita_packet *packet, ssize_t len
 	}
 
 // 	calculate number of samples in the buffer
-	short payload_length = ((htons(packet->length) * sizeof(uint32_t)) - VITA_PACKET_HEADER_SIZE);
+	unsigned long payload_length = ((htons(packet->length) * sizeof(uint32_t)) - VITA_PACKET_HEADER_SIZE);
 	if(payload_length != length - VITA_PACKET_HEADER_SIZE) {
-		output("VITA header size doesn't match bytes read from network\n");
+		output("VITA header size doesn't match bytes read from network (%d != %d - %d) -- %d\n", payload_length, length, VITA_PACKET_HEADER_SIZE, sizeof(struct vita_packet));
 		hal_BufferRelease(&buf_desc);
 		return;
 	}
