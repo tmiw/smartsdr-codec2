@@ -88,7 +88,7 @@ static void add_sequence_to_response_queue(unsigned int sequence)
 	pthread_mutex_unlock(&response_queue_lock);
 }
 
-static void complete_response_entry(int sequence, unsigned int code, char *message)
+static void complete_response_entry(unsigned int sequence, unsigned int code, char *message)
 {
 	struct response_queue_entry *current_entry;
 
@@ -141,8 +141,9 @@ static struct response_queue_entry *pop_response_with_sequence(unsigned int sequ
 
 static void process_api_line(char *line)
 {
-	char *message;
-	int sequence, code, ret, handle;
+	char *message, *endptr, *response_message;
+	int ret;
+	unsigned int handle, code, sequence;
 
 	switch(*line) {
 	case 'V':

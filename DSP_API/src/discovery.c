@@ -107,7 +107,7 @@ int discover_radio(struct sockaddr_in *addr)
 	int discovery_sock;
 	struct vita_packet packet;
 	struct sockaddr_in remote_address;
-	socklen_t remote_address_size;
+	socklen_t remote_address_size = sizeof(remote_address);
 
 	struct sockaddr_in local_address = {
 		.sin_family = AF_INET,
