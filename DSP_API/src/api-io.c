@@ -145,60 +145,100 @@ static void process_api_line(char *line)
 	int ret;
 	unsigned int handle, code, sequence;
 
-	switch(*line) {
+	switch(*(line++)) {
 	case 'V':
 		errno = 0;
-		ret = sscanf(line, "V%d.%d.%d.%d", &api_version_major[0], &api_version_major[1], &api_version_minor[0], &api_version_minor[1]);
+		ret = sscanf(line, "%d.%d.%d.%d", &api_version_major[0], &api_version_major[1], &api_version_minor[0], &api_version_minor[1]);
 		if (ret != 4)
 			output("Error converting version string: %s\n", line);
 
 		break;
 	case 'H':
 		errno = 0;
-		ret = sscanf(line, "H%x", &api_session_handle);
-		if (ret != 1)
-			output("Cannot process session handle: %s\n", line);
+        api_session_handle = strtoul(line, &endptr, 16);
+        if ((errno == ERANGE && api_session_handle == ULONG_MAX) ||
+            (errno != 0 && api_session_handle == 0)) {
+            output("Error finding session handle: %s\n", strerror(errno));
+            break;
+        }
+
+        if (endptr == line) {
+            output("Cannot find session handle in: %s\n", line);
+            break;
+        }
 
 		break;
 	case 'S':
-		errno = 0;
-		ret = sscanf(line, "S%x|%2048mc", &handle, &message);
-		if (ret == 2) {
-			process_status_message(message);
-			free(message);
-		} else if (errno != 0) {
-			output("Error converting status message: %s\n", strerror(errno));
-		} else {
-			output("Invalid status message: %s\n", line);
-		}
+		output("Raw Status Message: %s\n", line);
 
+		errno = 0;
+		handle = strtoul(line, &endptr, 16);
+        if ((errno == ERANGE && handle == ULONG_MAX) ||
+            (errno != 0 && handle == 0)) {
+            output("Error finding status handle: %s\n", strerror(errno));
+            break;
+        }
+
+        if (endptr == line) {
+            break;
+        }
+
+        process_status_message(endptr + 1);
 		break;
 	case 'M':		//  Message
 		break;
 	case 'R':		//  Response
-		output("Got response: %s", line);
+		output("Got response: %s\n", line);
 		errno = 0;
-		ret = sscanf(line, "R%d|%x|%2048mc", &sequence, &code, &message);
-		if (ret == 3 || ret == 2)
-			complete_response_entry(sequence, code, message);
-		else if (errno != 0)
-			output("Error converting response message: %s\n", strerror(errno));
-		else
-			output("Invalid response message: %s\n", line);
+		sequence = strtoul(line, &endptr, 10);
+        if ((errno == ERANGE && sequence == ULONG_MAX) ||
+            (errno != 0 && sequence == 0)) {
+            output("Error finding response sequence: %s\n", strerror(errno));
+            break;
+        }
 
+        if (endptr == line) {
+            output("Cannot find response sequence in: %s\n", line);
+            break;
+        }
+
+        errno = 0;
+        code = strtoul(endptr + 1, &response_message, 16);
+        if ((errno == ERANGE && code == ULONG_MAX) ||
+            (errno != 0 && code == 0)) {
+            output("Error finding response code: %s\n", strerror(errno));
+            break;
+        }
+
+        if (response_message == endptr + 1) {
+            output("Cannot find response code in: %s\n", line);
+            break;
+        }
+
+        //  We need a copy of message because it needs to stick around
+        //  in the response queue until the radio responds.
+        message = (char *) malloc(strlen(response_message) + 1);
+        strcpy(message, response_message + 1);
+
+        output("Completing response with sequence %d, code %d, and message %s\n", sequence, code, message);
+
+        complete_response_entry(sequence, code, message);
 		break;
 	case 'C':
 		errno = 0;
-		ret = sscanf(line, "C%d|%2048mc", &sequence, &message);
-		if (ret == 2) {
-			process_waveform_command(message);
-			free(message);
-		} else if (errno != 0) {
-			output("Error converting command message: %s\n", strerror(errno));
-		} else {
-			output("Invalid command message: %s\n", line);
-		}
+        sequence = strtoul(line, &endptr, 10);
+        if ((errno == ERANGE && sequence == ULONG_MAX) ||
+            (errno != 0 && sequence == 0)) {
+            output("Error finding command sequence: %s\n", strerror(errno));
+            break;
+        }
 
+        if (line == endptr) {
+            output("Cannot find command sequence in: %s\n", line);
+            break;
+        }
+
+        process_waveform_command(endptr + 1);
 		break;
 	default:
 		output("Unknown command: %s\n", line);
