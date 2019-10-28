@@ -50,7 +50,7 @@ static void vita_process_waveform_packet(struct vita_packet *packet, ssize_t len
 
 	if(!buf_desc->timestamp_int) {
 		buf_desc->timestamp_int = htonl(packet->timestamp_int);
-		buf_desc->timestamp_frac_h = htonl(packet->timestamp_frac >> 32);
+		buf_desc->timestamp_frac_h = htonl(packet->timestamp_frac >> 32u);
 		buf_desc->timestamp_frac_l = htonl(packet->timestamp_frac);
 	}
 
@@ -87,7 +87,7 @@ static void vita_parse_packet(struct vita_packet *packet, size_t packet_len)
 	}
 }
 
-static void* vita_processing_loop(void* param)
+static void* vita_processing_loop()
 {
 	struct vita_packet packet;
 	int ret;
