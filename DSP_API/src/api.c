@@ -185,10 +185,12 @@ static int process_slice_command(char **argv, int argc) {
 		return 0;
 	}
 
-	if (strcmp("700C", value) == 0) {
-		output("Need to switch to 700C\n");
-	} else if (strcmp("1200A", value) == 0) {
-		output("Need to switch to 1200A\n");
+	if (strcmp("700D", value) == 0) {
+		output("Switching to FreeDV 700D\n");
+		freedv_set_mode(FREEDV_MODE_700D);
+	} else if (strcmp("1600", value) == 0) {
+		output("Need to switch to 1600\n");
+		freedv_set_mode(FREEDV_MODE_1600);
 	} else {
 		output("Invalid FreeDV mode: %s\n", value);
 	}

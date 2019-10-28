@@ -23,6 +23,7 @@
  *  Author: Annaliese McDermond <nh6z@nh6z.net>
  *
  * ************************************************************************** */
+#define _GNU_SOURCE
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -52,9 +53,7 @@ static bool _waveform_thread_abort = false;
 
 static sem_t sched_waveform_sem;
 
-struct freedv_params {
-	int mode;
-};
+static int freedv_mode = FREEDV_MODE_1600;
 
 struct meter_def meter_table[] = {
         { 0, "fdv-snr", -100.0f, 100.0f, "DB" },
@@ -69,7 +68,7 @@ struct meter_def meter_table[] = {
 
 static void _dsp_convertBufEndian(BufferDescriptor buf_desc)
 {
-	int i;
+	unsigned int i;
 
 	if(buf_desc->sample_size != 8)
 		return;
@@ -96,7 +95,7 @@ static BufferDescriptor _WaveformList_UnlinkHead(void)
 	if(buf_desc != NULL)
 	{
 		// make sure buffer exists and is actually linked
-		if(!buf_desc || !buf_desc->prev || !buf_desc->next)
+		if(!buf_desc->prev || !buf_desc->next)
 		{
 			output( "Invalid buffer descriptor");
 			buf_desc = NULL;
@@ -240,15 +239,14 @@ static void freedv_send_meters(struct freedv *freedv)
         meter_block[i][0] = htons(meter_table[i].id);
 
     vita_send_meter_packet(&meter_block, sizeof(meter_block));
+    output(".");
 }
 
-static void* _sched_waveform_thread(void *arg)
+static void* _sched_waveform_thread()
 {
-    int 	nin, nout, radio_samples;
-    int		i;
+    int 	nin, nout;
+    unsigned long		i;
     int		ret;
-
-	struct freedv_params *params = (struct freedv_params *) arg;
 
 	float packet_buffer[PACKET_SAMPLES];
 	struct timespec timeout;
@@ -266,12 +264,12 @@ static void* _sched_waveform_thread(void *arg)
 	soxr_t rx_upsampler = soxr_create(8000, 24000, 1, &error, &io_spec, NULL, NULL);
 	soxr_t tx_upsampler = soxr_create(8000, 24000, 1, &error, &io_spec, NULL, NULL);
 
-    if ((params->mode == FREEDV_MODE_700D) || (params->mode == FREEDV_MODE_2020)) {
+    if ((freedv_mode == FREEDV_MODE_700D) || (freedv_mode == FREEDV_MODE_2020)) {
         struct freedv_advanced adv;
         adv.interleave_frames = 1;
-        _freedvS = freedv_open_advanced(params->mode, &adv);
+        _freedvS = freedv_open_advanced(freedv_mode, &adv);
     } else {
-        _freedvS = freedv_open(params->mode);
+        _freedvS = freedv_open(freedv_mode);
     }
 
 //     freedv_set_squelch_en(_freedvS, 0);
@@ -280,7 +278,7 @@ static void* _sched_waveform_thread(void *arg)
 
 	int tx_speech_samples = freedv_get_n_speech_samples(_freedvS);
 	int tx_modem_samples = freedv_get_n_nom_modem_samples(_freedvS);
-    int rx_ringbuffer_size = freedv_get_n_max_modem_samples(_freedvS) * sizeof(float) * 4;
+    unsigned long rx_ringbuffer_size = freedv_get_n_max_modem_samples(_freedvS) * sizeof(float) * 4;
 
     ringbuf_t rx_input_buffer = ringbuf_new (rx_ringbuffer_size);
     ringbuf_t rx_output_buffer = ringbuf_new (rx_ringbuffer_size);
@@ -327,11 +325,11 @@ static void* _sched_waveform_thread(void *arg)
 			}
 		}
 
-		while(buf_desc = _WaveformList_UnlinkHead()) {
+		while((buf_desc = _WaveformList_UnlinkHead())) {
 			// convert the buffer to little endian
 			_dsp_convertBufEndian(buf_desc);
 
-			if ((buf_desc->stream_id & 1) == 0) {
+			if ((buf_desc->stream_id & 1u) == 0) {
 				//	Set the transmit 'initial' flag
 				_end_of_transmission = false;
 
@@ -382,7 +380,7 @@ static void* _sched_waveform_thread(void *arg)
 					memset (buf_desc->buf_ptr, 0, PACKET_SAMPLES * sizeof(Complex));
 				}
                 vita_send_audio_packet(buf_desc);
-			} else if ( (buf_desc->stream_id & 1) == 1) { //TX BUFFER
+			} else if ( (buf_desc->stream_id & 0x1u) == 1) { //TX BUFFER
 				if(_end_of_transmission && ringbuf_is_empty(tx_output_buffer))
 					continue;
 
@@ -423,7 +421,7 @@ static void* _sched_waveform_thread(void *arg)
 				//  If we're at the end, drain the buffer
 				if (_end_of_transmission) {
 					while(!ringbuf_is_empty(tx_output_buffer)) {
-						int n = ringbuf_bytes_used(tx_output_buffer) >= PACKET_SAMPLES ? PACKET_SAMPLES : ringbuf_bytes_used(tx_output_buffer);
+						unsigned long n = ringbuf_bytes_used(tx_output_buffer) >= PACKET_SAMPLES ? PACKET_SAMPLES : ringbuf_bytes_used(tx_output_buffer);
 						output("Draining %d bytes from buffer\n", n);
 
 						memset (buf_desc->buf_ptr, 0, PACKET_SAMPLES * sizeof(Complex));
@@ -456,19 +454,12 @@ static void* _sched_waveform_thread(void *arg)
 	ringbuf_free(&tx_input_buffer);
 	ringbuf_free(&tx_output_buffer);
 
-	free(params);
-
 	return NULL;
 }
 
-static void start_processing_thread(int mode)
+static void start_processing_thread()
 {
-	struct freedv_params *params;
-	params = (struct freedv_params *) malloc(sizeof(struct freedv_params));
-
-	params->mode = mode;
-
-	pthread_create(&_waveform_thread, NULL, &_sched_waveform_thread, params);
+	pthread_create(&_waveform_thread, NULL, &_sched_waveform_thread, NULL);
 
 	struct sched_param fifo_param;
 	fifo_param.sched_priority = 30;
@@ -488,18 +479,26 @@ void sched_waveform_Init(void)
 
 	sem_init(&sched_waveform_sem, 0, 0);
 
-	start_processing_thread(FREEDV_MODE_1600);
+	start_processing_thread();
 }
 
 void freedv_set_mode(int mode)
 {
-	output("Stopping Thread...\n");
-	_waveform_thread_abort = true;
-	pthread_join(_waveform_thread, NULL);
-	output("Restarting thread with new mode...\n");
+    int ret;
 
-	_waveform_thread_abort = false;
-	start_processing_thread(mode);
+    freedv_mode = mode;
+
+    //  If the thread is running, we need to restart it.
+    ret = pthread_tryjoin_np(_waveform_thread, NULL);
+    if (ret == 0 && errno == EBUSY) {
+        output("Stopping Thread...\n");
+        _waveform_thread_abort = true;
+        pthread_join(_waveform_thread, NULL);
+        output("Restarting thread with new mode...\n");
+
+        _waveform_thread_abort = false;
+        start_processing_thread();
+    }
 }
 
 void sched_waveformThreadExit()

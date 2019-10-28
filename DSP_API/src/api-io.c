@@ -340,7 +340,7 @@ int wait_for_api_io()
 unsigned int send_api_command(char *command, ...)
 {
     ssize_t bytes_written;
-    int cmdlen;
+    int cmdlen = 0;
     va_list ap;
     char message[MAX_API_COMMAND_SIZE];
     char message_format[MAX_API_COMMAND_SIZE + 4];

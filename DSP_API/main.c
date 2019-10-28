@@ -81,8 +81,8 @@ int main(int argc, char **argv)
 	output("Radio connected\n");
 	send_api_command("sub slice all");
 
-	//  XXX These commands should be encapsulated in freedv handling code in
-	//  XXX separate file.
+	//  TODO: These commands should be encapsulated in freedv handling code in
+	//        separate file.
 	response_code = send_api_command_and_wait("waveform create name=FreeDV-USB mode=FDVU underlying_mode=USB version=2.0.0", &response_string);
 	output("Received response code 0x%08x as '%s'\n", response_code, response_string);
 	free(response_string);
