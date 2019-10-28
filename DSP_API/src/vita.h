@@ -54,6 +54,6 @@ struct vita_packet {
 };
 #pragma pack(pop)
 
-#define VITA_PACKET_HEADER_SIZE (sizeof(struct vita_packet) - sizeof((struct vita_packet){0}.raw_payload))
+#define VITA_PACKET_HEADER_SIZE (sizeof(struct vita_packet) - sizeof(((struct vita_packet){0}).raw_payload))
 
 #endif /* _VITA_H */
