@@ -24,3 +24,8 @@
 
 # Build dirs
 build/
+cmake-build-debug/
+
+# IDE Files
+.idea/
+
