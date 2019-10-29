@@ -146,7 +146,10 @@ static int process_slice_status(char **argv, int argc) {
 	for (i = 2; i < argc; ++i) {
 		value = argv[i];
 		strsep(&value, "=");
-// 		output("Key: %s, Value: %s\n", argv[i], value);
+		if (value == NULL) {
+		    output("Couldn't find delimeter in %s\n", argv[i]);
+		    continue;
+		}
 
 		//  XXX Need to handle switching back here.  We probably need to
 		//  XXX keep track of which slice we're using and go from there.
