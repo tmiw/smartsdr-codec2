@@ -33,12 +33,11 @@
 #ifndef VITA_OUTPUT_H_
 #define VITA_OUTPUT_H_
 
-#include "hal_buffer.h"
 #include "sched_waveform.h"
 
 void vita_output_Init(const char * ip );
 void hal_Listener_Init(void);
-void vita_send_audio_packet(BufferDescriptor buf_desc_out);
+void vita_send_audio_packet(uint32_t *samples, size_t len, unsigned int tx);
 unsigned short vita_init(freedv_proc_t params);
 void vita_stop();
 void vita_send_meter_packet(void *meters, size_t len);

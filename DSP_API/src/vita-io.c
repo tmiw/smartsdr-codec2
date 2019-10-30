@@ -45,29 +45,23 @@ static uint8_t meter_sequence = 0;
 
 static freedv_proc_t freedv_params;
 
+static uint32_t rx_stream_id, tx_stream_id;
+
 static void vita_process_waveform_packet(struct vita_packet *packet, ssize_t length)
 {
-	BufferDescriptor buf_desc;
-	buf_desc = hal_BufferRequest(HAL_RX_BUFFER_SIZE, sizeof(Complex));
-
-	if(!buf_desc->timestamp_int) {
-		buf_desc->timestamp_int = htonl(packet->timestamp_int);
-		buf_desc->timestamp_frac_h = htonl(packet->timestamp_frac >> 32u);
-		buf_desc->timestamp_frac_l = htonl(packet->timestamp_frac);
-	}
-
-// 	calculate number of samples in the buffer
 	unsigned long payload_length = ((htons(packet->length) * sizeof(uint32_t)) - VITA_PACKET_HEADER_SIZE);
 	if(payload_length != length - VITA_PACKET_HEADER_SIZE) {
 		output("VITA header size doesn't match bytes read from network (%d != %d - %d) -- %d\n", payload_length, length, VITA_PACKET_HEADER_SIZE, sizeof(struct vita_packet));
-		hal_BufferRelease(&buf_desc);
 		return;
 	}
 
-	memcpy(buf_desc->buf_ptr, packet->raw_payload, payload_length);
-	buf_desc->stream_id = htonl(packet->stream_id);
-//	output("StreamID: 0x%08x\n", buf_desc->stream_id);
-    freedv_queue_desc(freedv_params, buf_desc);
+	if (!(htonl(packet->stream_id) & 0x0001u)) {
+	    rx_stream_id = packet->stream_id;
+	    //  This is a receive packet
+	    freedv_queue_rx_samples(freedv_params, packet->if_samples, payload_length);
+	} else {
+        tx_stream_id = packet->stream_id;
+	}
 }
 
 static void vita_parse_packet(struct vita_packet *packet, size_t packet_len)
@@ -224,29 +218,18 @@ void vita_send_meter_packet(void *meters, size_t len)
 }
 
 static uint32_t audio_sequence = 0;
-void vita_send_audio_packet(BufferDescriptor buf_desc_out)
+void vita_send_audio_packet(uint32_t *samples, size_t len, unsigned int tx)
 {
     struct vita_packet packet = {0};
     unsigned int i, j;
 
+    assert(len <= sizeof(packet.if_samples));
+
     packet.packet_type = VITA_PACKET_TYPE_IF_DATA_WITH_STREAM_ID;
-    packet.stream_id = htonl(buf_desc_out->stream_id);
+    packet.stream_id = tx ? tx_stream_id : rx_stream_id;
     packet.class_id = AUDIO_CLASS_ID;
     packet.timestamp_type = audio_sequence++;
 
-    assert(buf_desc_out != NULL);
-    assert(buf_desc_out->buf_ptr != NULL);
-
-    for(i = 0, j = 0; i < buf_desc_out->num_samples * 2; ++i) {
-        packet.if_samples[j] = htonl(((uint32_t *) buf_desc_out->buf_ptr)[i]);
-        if (j == (sizeof(packet.if_samples) / sizeof(packet.if_samples[0]) - 1)) {
-            vita_send_packet(&packet, (j + 1) * sizeof(packet.if_samples[0]));
-            j = 0;
-        } else {
-            ++j;
-        }
-    }
-
-    if (j > 0)
-        vita_send_packet(&packet, j * sizeof(packet.if_samples[0]));
+    memcpy(packet.if_samples, samples, len);
+    vita_send_packet(&packet, len);
 }

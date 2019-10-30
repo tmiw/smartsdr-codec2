@@ -2,7 +2,6 @@ set(WAVEFORM_SRCS
     api.c
     api-io.c
     discovery.c
-    hal_buffer.c
     ringbuf.c
     sched_waveform.c
     utils.c

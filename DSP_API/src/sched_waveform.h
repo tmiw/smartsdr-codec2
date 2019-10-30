@@ -37,16 +37,13 @@
 #include <stdbool.h>
 
 #include "freedv_api.h"
-#include "hal_buffer.h"
 
 typedef struct freedv_proc_t *freedv_proc_t;
 
-void freedv_queue_desc(freedv_proc_t params, BufferDescriptor buf_desc);
 freedv_proc_t freedv_init(int mode);
-void sched_waveform_signal(freedv_proc_t params);
 void sched_waveformThreadExit(freedv_proc_t params);
 void freedv_set_mode(freedv_proc_t params, int mode);
-uint32_t cmd_freedv_mode(int requester_fd, int argc, char **argv);
+void freedv_queue_rx_samples(freedv_proc_t params, uint32_t *samples, size_t len);
 
 void sched_waveform_setEndOfTX(bool end_of_transmission);
 #endif /* SCHED_WAVEFORM_H_ */
