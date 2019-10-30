@@ -44,12 +44,12 @@ struct vita_packet {
 	uint32_t timestamp_int;
 	uint64_t timestamp_frac;
 	union {
-		uint8_t raw_payload[1024];  // 1024
-		uint32_t if_samples[256];   // 256
+		uint8_t raw_payload[1440];
+		uint32_t if_samples[360];
 		struct {
 			uint16_t id;
 			uint16_t value;
-		} meter[360];               // 360
+		} meter[360];
 	};
 };
 #pragma pack(pop)
