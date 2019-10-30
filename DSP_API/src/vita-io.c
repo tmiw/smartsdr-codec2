@@ -43,6 +43,8 @@ static bool vita_processing_thread_abort;
 static pthread_t vita_processing_thread;
 static uint8_t meter_sequence = 0;
 
+static freedv_proc_t freedv_params;
+
 static void vita_process_waveform_packet(struct vita_packet *packet, ssize_t length)
 {
 	BufferDescriptor buf_desc;
@@ -65,7 +67,7 @@ static void vita_process_waveform_packet(struct vita_packet *packet, ssize_t len
 	memcpy(buf_desc->buf_ptr, packet->raw_payload, payload_length);
 	buf_desc->stream_id = htonl(packet->stream_id);
 //	output("StreamID: 0x%08x\n", buf_desc->stream_id);
-	sched_waveform_Schedule(buf_desc);
+    freedv_queue_desc(freedv_params, buf_desc);
 }
 
 static void vita_parse_packet(struct vita_packet *packet, size_t packet_len)
@@ -126,8 +128,9 @@ static void* vita_processing_loop()
 	return NULL;
 }
 
-unsigned short vita_init()
+unsigned short vita_init(freedv_proc_t params)
 {
+    freedv_params = params;
 	struct sockaddr_in bind_addr =  {
 		.sin_family = AF_INET,
 		.sin_addr.s_addr = htonl(INADDR_ANY),

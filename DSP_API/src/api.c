@@ -46,6 +46,8 @@ struct dispatch_entry {
 
 static unsigned char active_slice = 0;
 
+static freedv_proc_t freedv_params;
+
 int dispatch_from_table(char *message, const struct dispatch_entry *dispatch_table)
 {
 	char *argv[MAX_ARGS];
@@ -85,10 +87,10 @@ static void change_to_fdv_mode(unsigned char slice) {
 	active_slice = slice;
 
     // Start up the processing loop
-	sched_waveform_Init();
+    freedv_params = freedv_init(FREEDV_MODE_1600);
 
 	// Start the VITA-49 processing system
-	if ((vita_port = vita_init()) == 0) {
+	if ((vita_port = vita_init(freedv_params)) == 0) {
 		output ("Cannot start VITA-49 processing loop\n");
 		return;
 	}
@@ -112,7 +114,7 @@ static void change_from_fdv_mode(unsigned char slice)
 	vita_stop();
 
 	//  Stop the processing loop
-	sched_waveformThreadExit();
+	sched_waveformThreadExit(freedv_params);
 
 	active_slice = 0;
 }
@@ -190,10 +192,10 @@ static int process_slice_command(char **argv, int argc) {
 
 	if (strcmp("700D", value) == 0) {
 		output("Switching to FreeDV 700D\n");
-		freedv_set_mode(FREEDV_MODE_700D);
+        freedv_set_mode(freedv_params, FREEDV_MODE_700D);
 	} else if (strcmp("1600", value) == 0) {
 		output("Need to switch to 1600\n");
-		freedv_set_mode(FREEDV_MODE_1600);
+        freedv_set_mode(freedv_params, FREEDV_MODE_1600);
 	} else {
 		output("Invalid FreeDV mode: %s\n", value);
 	}
