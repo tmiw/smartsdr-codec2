@@ -34,6 +34,7 @@
 #include <errno.h>
 #include <arpa/inet.h>
 #include <stdbool.h>
+#include <signal.h>
 
 #include "modem_stats.h"
 
@@ -51,10 +52,10 @@ struct freedv_proc_t {
     pthread_t thread;
     int running;
     sem_t input_sem;
-    int mode;
     struct freedv *fdv;
     ringbuf_t rx_input_buffer;
     ringbuf_t tx_input_buffer;
+    int unkey;
 
     // XXX Meter table?
 };
@@ -134,12 +135,6 @@ void freedv_set_string(uint32_t slice, char* string)
     output(ANSI_MAGENTA "new TX string is '%s'\n",string);
 }
 
-void sched_waveform_setEndOfTX(bool end_of_transmission)
-{
-	output("Setting end of waveform\n");
-    _end_of_transmission = true;
-}
-
 static void freedv_send_meters(struct freedv *freedv)
 {
     short meter_block[7][2] = {0};
@@ -162,7 +157,38 @@ static void freedv_send_meters(struct freedv *freedv)
         meter_block[i][0] = htons(meter_table[i].id);
 
     vita_send_meter_packet(&meter_block, sizeof(meter_block));
-    output(".");
+}
+
+void freedv_queue_samples(freedv_proc_t params, int tx, size_t len, uint32_t *samples)
+{
+    unsigned int num_samples = len / sizeof(uint32_t);
+    ringbuf_t buffer = tx ? params->tx_input_buffer : params->rx_input_buffer;
+
+    for (unsigned int i = 0, j = 0; i < num_samples / 2; ++i, j += 2)
+        samples[i] = ntohl(samples[j]);
+
+    ringbuf_memcpy_into (buffer, samples, (num_samples / 2) * sizeof(uint32_t));
+    sem_post(&params->input_sem);
+}
+
+static void freedv_send_buffer(ringbuf_t buffer, int tx, int flush)
+{
+    uint32_t packet_buffer[PACKET_SAMPLES];
+
+    while (ringbuf_bytes_used(buffer) >= sizeof(packet_buffer)) {
+        ringbuf_memcpy_from (&packet_buffer, buffer, sizeof(packet_buffer));
+        vita_send_audio_packet(packet_buffer, sizeof(packet_buffer), tx);
+    }
+
+    if (flush) {
+        ringbuf_memcpy_from (&packet_buffer, buffer, ringbuf_bytes_used(buffer));
+        vita_send_audio_packet(packet_buffer, ringbuf_bytes_used(buffer), tx);
+    }
+}
+
+void freedv_unkey(freedv_proc_t params)
+{
+    params->unkey = 1;
 }
 
 static void freedv_processing_loop_cleanup(void *arg)
@@ -170,21 +196,9 @@ static void freedv_processing_loop_cleanup(void *arg)
     freedv_proc_t params = (freedv_proc_t) arg;
 
     sem_destroy(&params->input_sem);
-
     freedv_close(params->fdv);
     ringbuf_free(&params->rx_input_buffer);
     ringbuf_free(&params->tx_input_buffer);
-}
-
-void freedv_queue_rx_samples(freedv_proc_t params, uint32_t *samples, size_t len)
-{
-    unsigned int num_samples = len / sizeof(uint32_t);
-
-    for (unsigned int i = 0, j = 0; i < num_samples / 2; ++i, j += 2)
-        samples[i] = ntohl(samples[j]);
-
-    ringbuf_memcpy_into (params->rx_input_buffer, samples, (num_samples / 2) * sizeof(uint32_t));
-    sem_post(&params->input_sem);
 }
 
 static void *_sched_waveform_thread(void *arg)
@@ -194,7 +208,7 @@ static void *_sched_waveform_thread(void *arg)
     int 	nin, nout;
     int		ret;
 
-	uint32_t packet_buffer[PACKET_SAMPLES * 2];
+	uint32_t packet_buffer[PACKET_SAMPLES];
 	struct timespec timeout;
 
     int tx_speech_samples = freedv_get_n_speech_samples(params->fdv);
@@ -227,21 +241,21 @@ static void *_sched_waveform_thread(void *arg)
 
 	params->running = 1;
 	output("Starting processing thread...\n");
-    pthread_cleanup_push(freedv_processing_loop_cleanup, params);
 
+    pthread_cleanup_push(freedv_processing_loop_cleanup, params);
     while (params->running) {
 		// wait for a buffer descriptor to get posted
 		if(clock_gettime(CLOCK_REALTIME, &timeout) == -1) {
 			output("Couldn't get time.\n");
 			continue;
 		}
+		//  TODO:  Probably decrease this timeout.  We should be getting packets every sr / packet_size seconds.
 		timeout.tv_sec += 1;
 
-		while((ret = sem_timedwait(&params->input_sem, &timeout)) == -1 && errno == EINTR)
-			continue;
+		while((ret = sem_timedwait(&params->input_sem, &timeout)) == -1 && errno == EINTR);
 
 		if(ret == -1) {
-			if(errno == ETIMEDOUT) {
+            if(errno == ETIMEDOUT) {
 				continue;
 			} else {
 				output("Error acquiring semaphore: %s\n", strerror(errno));
@@ -249,17 +263,44 @@ static void *_sched_waveform_thread(void *arg)
 			}
 		}
 
+		//  TODO:  Create a "processing chain" structure to hold all of the data and abstract these into a single
+		//         function.
+        //  TX Processing Starts Here
+        while (ringbuf_bytes_used(params->tx_input_buffer) >= tx_speech_samples * sizeof(float) * 3) {
+            float resample_buffer[tx_speech_samples * 3];
+            size_t odone;
+
+            ringbuf_memcpy_from(resample_buffer, params->tx_input_buffer, tx_speech_samples * sizeof(float) * 3);
+
+            error = soxr_process (tx_downsampler,
+                                  resample_buffer, tx_speech_samples * 3, NULL,
+                                  speech_in, tx_speech_samples, &odone);
+
+            freedv_tx(params->fdv, mod_out, speech_in);
+
+            error = soxr_process (tx_upsampler,
+                                  mod_out, tx_modem_samples, NULL,
+                                  resample_buffer, tx_modem_samples * 3, &odone);
+
+            ringbuf_memcpy_into (tx_output_buffer, resample_buffer, odone * sizeof(float));
+        }
+
+        if (params->unkey) {
+            freedv_send_buffer(tx_output_buffer, 1, 1);
+            params->unkey = 0;
+        } else {
+            freedv_send_buffer(tx_output_buffer, 1, 0);
+        }
+
         //  Check how many samples the converter wants and see if the
         //  buffer has that right now.  We multiply by 3 because the
         //  FreeDV functions want 8ksps, and we get 24ksps from the
         //  radio.
         nin = freedv_nin(params->fdv);
         int radio_samples = nin * 3;
-// 		output("FreeDV wants %d samples, have %d samples\n", radio_samples, ringbuf_bytes_used(rx_input_buffer) / sizeof(float));
 
-        if(ringbuf_bytes_used(params->rx_input_buffer) >= radio_samples * sizeof(float)) {
-            //  XXX This should be allocated at loop start and sized
-            //  XXX to be sizeof(demod_in) * 3.
+        //  RX Processing
+        while (ringbuf_bytes_used(params->rx_input_buffer) >= radio_samples * sizeof(float)) {
             float resample_buffer[radio_samples];
             size_t odone;
 
@@ -282,78 +323,11 @@ static void *_sched_waveform_thread(void *arg)
             ringbuf_memcpy_into (rx_output_buffer, resample_buffer, odone * sizeof(float));
         }
 
-        if (ringbuf_bytes_used(rx_output_buffer) >= PACKET_SAMPLES * sizeof(uint32_t)) {
-            //  Copy the data into the high side of the buffer so that we can restrucutre it for real/imag format
-            ringbuf_memcpy_from (&packet_buffer[PACKET_SAMPLES], rx_output_buffer, sizeof(packet_buffer) / 2);
-
-            for (unsigned int i = PACKET_SAMPLES, j = 0; i < PACKET_SAMPLES * 2; ++i, j += 2)
-                packet_buffer[j] = packet_buffer[j + 1] = htonl(packet_buffer[i]);
-
-            vita_send_audio_packet(packet_buffer, sizeof(packet_buffer), 0);
-        }
-
-//			} else if ( (buf_desc->stream_id & 0x1u) == 1) { //TX BUFFER
-//				if(_end_of_transmission && ringbuf_is_empty(tx_output_buffer))
-//					continue;
-//
-//				for( i = 0 ; i < PACKET_SAMPLES ; i++)
-//					packet_buffer[i] = ((Complex *) buf_desc->buf_ptr)[i].real;
-//				ringbuf_memcpy_into (params->tx_input_buffer, packet_buffer, sizeof(packet_buffer));
-//
-//				if(ringbuf_bytes_used(params->tx_input_buffer) >= tx_speech_samples * sizeof(float) * 3) {
-//					float resample_buffer[tx_speech_samples * 3];
-//					size_t odone;
-//
-//					ringbuf_memcpy_from(resample_buffer, params->tx_input_buffer, tx_speech_samples * sizeof(float) * 3);
-//
-//					error = soxr_process (tx_downsampler,
-//											resample_buffer, tx_speech_samples * 3, NULL,
-//											speech_in, tx_speech_samples, &odone);
-//
-//					freedv_tx(params->fdv, mod_out, speech_in);
-//
-//					error = soxr_process (tx_upsampler,
-//										  mod_out, tx_modem_samples, NULL,
-//										  resample_buffer, tx_modem_samples * 3, &odone);
-//
-//					ringbuf_memcpy_into (tx_output_buffer, resample_buffer, odone * sizeof(float));
-//				}
-//
-//				if(ringbuf_bytes_used(tx_output_buffer) >= PACKET_SAMPLES * sizeof(float)) {
-//					ringbuf_memcpy_from (packet_buffer, tx_output_buffer, sizeof(packet_buffer));
-//					for (i = 0; i < PACKET_SAMPLES; ++i)
-//						((Complex *) buf_desc->buf_ptr)[i].real =
-//							((Complex *) buf_desc->buf_ptr)[i].imag =
-//							packet_buffer[i];
-//				} else {
-//					memset (buf_desc->buf_ptr, 0, PACKET_SAMPLES * sizeof(Complex));
-//				}
-//                vita_send_audio_packet(buf_desc);
-//
-//				//  If we're at the end, drain the buffer
-//				if (_end_of_transmission) {
-//					while(!ringbuf_is_empty(tx_output_buffer)) {
-//						unsigned long n = ringbuf_bytes_used(tx_output_buffer) >= PACKET_SAMPLES ? PACKET_SAMPLES : ringbuf_bytes_used(tx_output_buffer);
-//						output("Draining %d bytes from buffer\n", n);
-//
-//						memset (buf_desc->buf_ptr, 0, PACKET_SAMPLES * sizeof(Complex));
-//
-//						ringbuf_memcpy_from (packet_buffer, tx_output_buffer, n);
-//
-//						for (i = 0; i < n / sizeof(float); ++i)
-//							((Complex *) buf_desc->buf_ptr)[i].real =
-//								((Complex *) buf_desc->buf_ptr)[i].imag =
-//								packet_buffer[i];
-//                        vita_send_audio_packet(buf_desc);
-//					}
-//					output("Buffer drained\n");
-//				}
-//			}
-//		} // While Loop
-//		hal_BufferRelease(&buf_desc);
-	} // Main Thread Loop
-	output("Processing thread stopped...\n");
+        freedv_send_buffer(rx_output_buffer, 0, 0);
+	}
     pthread_cleanup_pop(!params->running);
+
+	output("Processing thread stopped...\n");
 
 	free(speech_in);
     free(speech_out);
@@ -381,20 +355,16 @@ static void start_processing_thread(freedv_proc_t params)
 	pthread_setschedparam(params->thread, SCHED_FIFO, &fifo_param);
 }
 
-freedv_proc_t freedv_init(int mode)
+static void freedv_setup(freedv_proc_t params, int mode)
 {
-    freedv_proc_t params = malloc(sizeof(struct freedv_proc_t));
+    sem_init(&params->input_sem, 0, 0);
 
-    params->mode = mode;
-
-	sem_init(&params->input_sem, 0, 0);
-
-    if ((params->mode == FREEDV_MODE_700D) || (params->mode == FREEDV_MODE_2020)) {
+    if ((mode == FREEDV_MODE_700D) || (mode == FREEDV_MODE_2020)) {
         struct freedv_advanced adv;
         adv.interleave_frames = 1;
-        params->fdv = freedv_open_advanced(params->mode, &adv);
+        params->fdv = freedv_open_advanced(mode, &adv);
     } else {
-        params->fdv = freedv_open(params->mode);
+        params->fdv = freedv_open(mode);
     }
 
 //     freedv_set_squelch_en(params->fdv, 0);
@@ -405,37 +375,40 @@ freedv_proc_t freedv_init(int mode)
     params->rx_input_buffer = ringbuf_new (rx_ringbuffer_size);
     params->tx_input_buffer = ringbuf_new (freedv_get_n_speech_samples(params->fdv) * sizeof(float) * 4);
 
+    params->unkey = 0;
+
     start_processing_thread(params);
+}
+
+freedv_proc_t freedv_init(int mode)
+{
+    freedv_proc_t params = malloc(sizeof(struct freedv_proc_t));
+
+    freedv_setup(params, mode);
 
     return params;
 }
 
-void freedv_set_mode(freedv_proc_t params, int mode)
+void freedv_destroy(freedv_proc_t params)
 {
-    int ret;
-
-    // TODO:  This can be called before there's a params!
-    //        Also needs to be rewritten with the restructuring.
-    //        freedv_init needs to be called again if we're running.
-    params->mode = mode;
-
-    //  If the thread is running, we need to restart it.
-    ret = pthread_tryjoin_np(params->thread, NULL);
-    if (ret == 0 && errno == EBUSY) {
-        output("Stopping Thread...\n");
-        params->running = 0;
-        pthread_join(params->thread, NULL);
-        output("Restarting thread with new mode...\n");
-
-//        start_processing_thread();
-    }
+    params->running = 0;
+    pthread_join(params->thread, NULL);
+    free(params);
 }
 
-void sched_waveformThreadExit(freedv_proc_t params)
+void freedv_set_mode(freedv_proc_t params, int mode)
 {
-    if (params == NULL)
-        return;
+    assert(params != NULL);
 
-	params->running = 0;
-	pthread_join(params->thread, NULL);
+    if (params->running) {
+        params->running = 0;
+        pthread_join(params->thread, NULL);
+    }
+
+    freedv_setup(params, mode);
+}
+
+int freedv_proc_get_mode(freedv_proc_t params)
+{
+    return freedv_get_mode(params->fdv);
 }

@@ -41,9 +41,10 @@
 typedef struct freedv_proc_t *freedv_proc_t;
 
 freedv_proc_t freedv_init(int mode);
-void sched_waveformThreadExit(freedv_proc_t params);
 void freedv_set_mode(freedv_proc_t params, int mode);
-void freedv_queue_rx_samples(freedv_proc_t params, uint32_t *samples, size_t len);
+void freedv_queue_samples(freedv_proc_t params, int tx, size_t len, uint32_t *samples);
+void freedv_destroy(freedv_proc_t params);
+int freedv_proc_get_mode(freedv_proc_t params);
+void freedv_unkey(freedv_proc_t params);
 
-void sched_waveform_setEndOfTX(bool end_of_transmission);
 #endif /* SCHED_WAVEFORM_H_ */

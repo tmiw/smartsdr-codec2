@@ -41,6 +41,7 @@
 #include <stdbool.h>
 #include <stdarg.h>
 #include <limits.h>
+#include <signal.h>
 
 #include "api-io.h"
 #include "api.h"
@@ -98,7 +99,6 @@ static void complete_response_entry(unsigned int sequence, unsigned int code, ch
 	pthread_mutex_lock(&response_queue_lock);
 	for (current_entry = response_queue_head; current_entry != NULL; current_entry = current_entry->next) {
 		if (current_entry->sequence == sequence) {
-// 			output("Assigning code %d (%d) to sequence %d\n", current_entry->code, code, sequence);
 			current_entry->code = code;
 			current_entry->message = message;
 			sem_post(&response_queue_sem);
@@ -118,10 +118,8 @@ static struct response_queue_entry *pop_response_with_sequence(unsigned int sequ
 	for (current_entry = last_entry = response_queue_head;
 	     current_entry != NULL;
 	     last_entry = current_entry, current_entry = current_entry->next) {
-		if (current_entry->sequence == sequence) {
-// 			output("Found sequence %d with code %d\n", sequence, current_entry->code);
+		if (current_entry->sequence == sequence)
 			break;
-		}
 	}
 
 	if (current_entry == NULL || current_entry->code == 0xffffffff) {
@@ -152,6 +150,8 @@ static void process_api_line(char *line)
 		if (ret != 4)
 			output("Error converting version string: %s\n", line);
 
+		output("Radio API Version: %d.%d(%d.%d)\n", api_version_major[1], api_version_major[1], api_version_minor[0], api_version_minor[1]);
+
 		break;
 	case 'H':
 		errno = 0;
@@ -169,8 +169,6 @@ static void process_api_line(char *line)
 
 		break;
 	case 'S':
-		output("Raw Status Message: %s\n", line);
-
 		errno = 0;
 		handle = strtoul(line, &endptr, 16);
         if ((errno == ERANGE && handle == ULONG_MAX) ||
@@ -188,7 +186,6 @@ static void process_api_line(char *line)
 	case 'M':		//  Message
 		break;
 	case 'R':		//  Response
-		output("Got response: %s\n", line);
 		errno = 0;
 		sequence = strtoul(line, &endptr, 10);
         if ((errno == ERANGE && sequence == ULONG_MAX) ||
@@ -219,8 +216,6 @@ static void process_api_line(char *line)
         //  in the response queue until the radio responds.
         message = (char *) malloc(strlen(response_message) + 1);
         strcpy(message, response_message + 1);
-
-        output("Completing response with sequence %d, code %d, and message %s\n", sequence, code, message);
 
         complete_response_entry(sequence, code, message);
 		break;
@@ -328,6 +323,13 @@ int api_io_init(struct sockaddr_in *radio_addr)
 	sem_init(&response_queue_sem, 0, 0);
 }
 
+void api_io_stop()
+{
+    api_io_abort = true;
+    pthread_join(api_io_thread, NULL);
+    close(api_io_socket);
+}
+
 int wait_for_api_io()
 {
 	int *ret;
@@ -353,7 +355,6 @@ unsigned int send_api_command(char *command, ...)
 	cmdlen = vsnprintf(message, sizeof(message), message_format, ap);
 	va_end(ap);
 
-	output("Sending %s", message);
     bytes_written = write(api_io_socket, message, (size_t) cmdlen);
     if (bytes_written == -1) {
     	output("Error writing to TCP API socket: %s\n", strerror(errno));

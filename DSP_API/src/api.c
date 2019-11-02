@@ -44,9 +44,9 @@ struct dispatch_entry {
 	dispatch_handler_t handler;
 };
 
-static unsigned char active_slice = 0;
+static int active_slice = -1;
 
-static freedv_proc_t freedv_params;
+static freedv_proc_t freedv_params = NULL;
 
 int dispatch_from_table(char *message, const struct dispatch_entry *dispatch_table)
 {
@@ -57,14 +57,11 @@ int dispatch_from_table(char *message, const struct dispatch_entry *dispatch_tab
  	assert(message != NULL);
  	assert(dispatch_table != NULL);
 
-// 	output("Processing message: %s\n", message);
-
 	argc = parse_argv(message, argv, MAX_ARGS);
 	if (argc < 1)
 		return -1;
 
 	for (i = 0; strlen(dispatch_table[i].name) > 0; ++i) {
-// 		output("Processing %s\n", dispatch_table[i].name);
 		if (strncmp(dispatch_table[i].name, argv[0], 256) == 0) {
 			assert(dispatch_table[i].handler != NULL);
 			return (dispatch_table[i].handler)(argv, argc);
@@ -78,7 +75,7 @@ static void change_to_fdv_mode(unsigned char slice) {
 	unsigned short vita_port;
 	char command[256];
 
-	if (active_slice != 0) {
+	if (active_slice >= 0) {
 	    output("Slice %u is using the waveform\n", active_slice);
 	    return;
 	}
@@ -103,20 +100,11 @@ static void change_to_fdv_mode(unsigned char slice) {
 
 static void change_from_fdv_mode(unsigned char slice)
 {
+    if (slice != active_slice)
+        return;
 
-// 	output("Mode = %s\n", value);
-
-    if (slice != active_slice) {
-        output("Slice %ud is not active, ignoring\n", slice);
-    }
-
-	//  Stop the VITA-49 loop
 	vita_stop();
-
-	//  Stop the processing loop
-	sched_waveformThreadExit(freedv_params);
-
-	active_slice = 0;
+	active_slice = -1;
 }
 
 static int process_slice_status(char **argv, int argc) {
@@ -153,10 +141,6 @@ static int process_slice_status(char **argv, int argc) {
 		    continue;
 		}
 
-		//  XXX Need to handle switching back here.  We probably need to
-		//  XXX keep track of which slice we're using and go from there.
-		//  XXX Maybe need to handle multi-slice eventually by forking an
-		//  XXX additional processing thread for stuff.  Dunno.
 		if(strcmp("mode", argv[i]) == 0) {
 			if (strcmp("FDVU", value) == 0 ||
 			    strcmp("FDVL", value) == 0) {
@@ -184,9 +168,13 @@ static int process_slice_command(char **argv, int argc) {
 		output("Improper number of arguments (%d)\n", argc);
 		return -1;
 	}
+
+	if (freedv_params == NULL)
+	    return -1;
+
 	value = argv[2];
 	strsep(&value, "=");
-	if (strcmp("fdv_mode", argv[2]) != 0) {
+	if (strcmp("fdv-set-mode", argv[2]) != 0) {
 		return 0;
 	}
 
@@ -212,7 +200,6 @@ static const struct dispatch_entry command_dispatch_table[] = {
 int process_status_message(char *message)
 {
 	assert(message != NULL);
-	output("Processing Status Message: %s\n", message);
 	return dispatch_from_table(message, status_dispatch_table);
 }
 

@@ -33,5 +33,5 @@ int wait_for_api_io();
 unsigned int send_api_command(char *command, ...);
 unsigned int send_api_command_and_wait(char *command, char **response_message, ...);
 int get_radio_addr(struct sockaddr_in *addr);
-
+void api_io_stop();
 #endif // API_IO_H_

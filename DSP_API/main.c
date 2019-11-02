@@ -45,6 +45,7 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <signal.h>
 
 #include "discovery.h"
 #include "api-io.h"
@@ -60,8 +61,12 @@ const char* APP_NAME = "FreeDV";            // Name of Application
 int main(int argc, char **argv)
 {
 	struct sockaddr_in radio_address;
-	int response_code;
-	char *response_string;
+    sigset_t stop_sigs;
+
+    sigemptyset(&stop_sigs);
+    sigaddset(&stop_sigs, SIGINT);
+    sigaddset(&stop_sigs, SIGTERM);
+    sigprocmask(SIG_BLOCK, &stop_sigs, NULL);
 
 	// XXX TODO: Loop around discovery/initiate?
 
@@ -83,20 +88,25 @@ int main(int argc, char **argv)
 
 	//  TODO: These commands should be encapsulated in freedv handling code in
 	//        separate file.
-	response_code = send_api_command_and_wait("waveform create name=FreeDV-USB mode=FDVU underlying_mode=USB version=2.0.0", &response_string);
-	output("Received response code 0x%08x as '%s'\n", response_code, response_string);
-	free(response_string);
+	send_api_command("waveform create name=FreeDV-USB mode=FDVU underlying_mode=USB version=2.0.0");
+	send_api_command("waveform set FreeDV-USB tx=1");
 // 	send_api_command("waveform set FreeDV-USB rx_filter low_cut=180");
 // 	send_api_command("waveform set FreeDV-USB rx_filter high_cut=2900");
 // 	send_api_command("waveform set FreeDV-USB rx_filter depth=8");
 	send_api_command("waveform create name=FreeDV-LSB mode=FDVL underlying_mode=LSB version=2.0.0");
+	send_api_command("waveform set FreeDV-LSB tx=1");
 // 	send_api_command("waveform set FreeDV-LSB rx_filter low_cut=180");
 // 	send_api_command("waveform set FreeDV-LSB rx_filter high_cut=2900");
 // 	send_api_command("waveform set FreeDV-LSB rx_filter depth=8");
 
-	wait_for_api_io();
-	output("Complete");
+//	wait_for_api_io();
+    sigwaitinfo(&stop_sigs, NULL);
 
+    output("Program stop requested.  Shutting Down\n");
+    send_api_command("waveform remove FreeDV-USB");
+    vita_stop();
+    api_io_stop();
+	output("FreeDV Waveform Stopped.\n");
     exit(0);
 }
 

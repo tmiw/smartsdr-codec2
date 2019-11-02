@@ -32,6 +32,7 @@
 #include <assert.h>
 #include <poll.h>
 #include <time.h>
+#include <signal.h>
 
 #include "vita-io.h"
 #include "common.h"
@@ -39,7 +40,7 @@
 #include "api-io.h"
 
 static int vita_sock;
-static bool vita_processing_thread_abort;
+static bool vita_processing_thread_abort = true;
 static pthread_t vita_processing_thread;
 static uint8_t meter_sequence = 0;
 
@@ -56,11 +57,13 @@ static void vita_process_waveform_packet(struct vita_packet *packet, ssize_t len
 	}
 
 	if (!(htonl(packet->stream_id) & 0x0001u)) {
+	    //  Receive Packet Processing
 	    rx_stream_id = packet->stream_id;
-	    //  This is a receive packet
-	    freedv_queue_rx_samples(freedv_params, packet->if_samples, payload_length);
+        freedv_queue_samples(freedv_params, 0, payload_length, packet->if_samples);
 	} else {
+	    //  Transmit packet processing
         tx_stream_id = packet->stream_id;
+        freedv_queue_samples(freedv_params, 1, payload_length, packet->if_samples);
 	}
 }
 
@@ -173,9 +176,16 @@ unsigned short vita_init(freedv_proc_t params)
 
 void vita_stop()
 {
-    vita_processing_thread_abort = true;
-	pthread_join(vita_processing_thread, NULL);
-	close(vita_sock);
+    if (freedv_params) {
+        freedv_destroy(freedv_params);
+        freedv_params = NULL;
+    }
+
+    if (vita_processing_thread_abort == false) {
+        vita_processing_thread_abort = true;
+        pthread_join(vita_processing_thread, NULL);
+        close(vita_sock);
+    }
 }
 
 static void vita_send_packet(struct vita_packet *packet,  size_t payload_len)
@@ -221,15 +231,16 @@ static uint32_t audio_sequence = 0;
 void vita_send_audio_packet(uint32_t *samples, size_t len, unsigned int tx)
 {
     struct vita_packet packet = {0};
-    unsigned int i, j;
 
-    assert(len <= sizeof(packet.if_samples));
+    assert(len * 2 <= sizeof(packet.if_samples));
 
     packet.packet_type = VITA_PACKET_TYPE_IF_DATA_WITH_STREAM_ID;
     packet.stream_id = tx ? tx_stream_id : rx_stream_id;
     packet.class_id = AUDIO_CLASS_ID;
     packet.timestamp_type = audio_sequence++;
 
-    memcpy(packet.if_samples, samples, len);
-    vita_send_packet(&packet, len);
+    for (unsigned int i = 0, j = 0; i < len / sizeof(uint32_t); ++i, j += 2)
+        packet.if_samples[j] = packet.if_samples[j + 1] = htonl(samples[i]);
+
+    vita_send_packet(&packet, len * 2);
 }
