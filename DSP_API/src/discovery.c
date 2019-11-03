@@ -19,7 +19,7 @@
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with Foobar.  If not, see <https://www.gnu.org/licenses/>.
+ * along with smartsdr-codec2.  If not, see <https://www.gnu.org/licenses/>.
  *
  */
 
@@ -39,7 +39,6 @@
 #include "vita.h"
 
 #define DISCOVERY_PORT		4992
-#define UDP_PAYLOAD_SIZE	 508
 
 #define MAX_DISCOVERY_ARGC	 128
 

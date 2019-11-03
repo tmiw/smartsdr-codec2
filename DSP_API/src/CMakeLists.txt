@@ -1,11 +1,11 @@
 set(WAVEFORM_SRCS
-    api.c
-    api-io.c
-    discovery.c
-    ringbuf.c
-    sched_waveform.c
-    utils.c
-    vita-io.c
+        api.c
+        api-io.c
+        discovery.c
+        ringbuf.c
+        freedv-processor.c
+        utils.c
+        vita-io.c
 )
 
 add_library(waveform ${WAVEFORM_SRCS})

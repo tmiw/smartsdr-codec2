@@ -60,7 +60,6 @@ struct response_queue_entry {
 static int api_io_socket;
 static unsigned int api_cmd_sequence;
 static unsigned int api_session_handle;
-static char api_version[16];
 static int api_version_major[2];
 static int api_version_minor[2];
 static bool api_io_abort = false;
@@ -143,6 +142,8 @@ static void process_api_line(char *line)
 	int ret;
 	unsigned int handle, code, sequence;
 
+	output("Received: %s\n", line);
+
 	switch(*(line++)) {
 	case 'V':
 		errno = 0;
@@ -183,9 +184,10 @@ static void process_api_line(char *line)
 
         process_status_message(endptr + 1);
 		break;
-	case 'M':		//  Message
+	case 'M':
+	    //  We don't handle messages
 		break;
-	case 'R':		//  Response
+	case 'R':
 		errno = 0;
 		sequence = strtoul(line, &endptr, 10);
         if ((errno == ERANGE && sequence == ULONG_MAX) ||
@@ -233,7 +235,7 @@ static void process_api_line(char *line)
             break;
         }
 
-        process_waveform_command(endptr + 1);
+        process_waveform_command(sequence, endptr + 1);
 		break;
 	default:
 		output("Unknown command: %s\n", line);
@@ -264,7 +266,7 @@ static void *api_io_processing_loop(void *arg)
 			continue;
 		} else if (ret == -1) {
 			// error
-			output(ANSI_RED "Poll failed: %s\n", strerror(errno));
+			output("Poll failed: %s\n", strerror(errno));
 			continue;
 		}
 
@@ -330,15 +332,6 @@ void api_io_stop()
     close(api_io_socket);
 }
 
-int wait_for_api_io()
-{
-	int *ret;
-
-	pthread_join(api_io_thread, (void **) &ret);
-
-	return *ret;
-}
-
 unsigned int send_api_command(char *command, ...)
 {
     ssize_t bytes_written;
@@ -354,6 +347,8 @@ unsigned int send_api_command(char *command, ...)
 	va_start(ap, command);
 	cmdlen = vsnprintf(message, sizeof(message), message_format, ap);
 	va_end(ap);
+
+	output("Sending: %s", message);
 
     bytes_written = write(api_io_socket, message, (size_t) cmdlen);
     if (bytes_written == -1) {

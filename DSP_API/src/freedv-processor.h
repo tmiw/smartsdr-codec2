@@ -1,6 +1,6 @@
 // SPDX-Licence-Identifier: GPL-3.0-or-later
 /*
- * api.h - API Processing
+ * freedv-processor.h - FreeDV sample processing
  *
  * Author: Annaliese McDermond <nh6z@nh6z.net>
  *
@@ -20,21 +20,26 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with smartsdr-codec2.  If not, see <https://www.gnu.org/licenses/>.
+ *
  */
-#ifndef API_H
-#define API_H
 
-struct meter_def {
-	unsigned short	id;
-	char name[32];
-	float min;
-	float max;
-	char unit[16];  // TODO: enum?
-};
+#ifndef SCHED_WAVEFORM_H_
+#define SCHED_WAVEFORM_H_
 
-int process_status_message(char *message);
-int process_waveform_command(unsigned int sequence, char *message);
-int register_meters(struct meter_def *meters);
-int find_meter_by_name(struct meter_def *meters, char *name);
+//  To import the constants to feed to freedv_set_mode
+#include "freedv_api.h"
 
-#endif // API_H_
+typedef struct freedv_proc_t *freedv_proc_t;
+enum freedv_xmit_state { READY, PTT_REQUESTED, TRANSMITTING, UNKEY_REQUESTED };
+
+freedv_proc_t freedv_init(int mode);
+void freedv_set_mode(freedv_proc_t params, int mode);
+void freedv_queue_samples(freedv_proc_t params, int tx, size_t len, uint32_t *samples);
+void freedv_destroy(freedv_proc_t params);
+int freedv_proc_get_mode(freedv_proc_t params);
+void freedv_set_xmit_state(freedv_proc_t params, enum freedv_xmit_state state);
+void freedv_set_squelch_level(freedv_proc_t params, float squelch);
+void freedv_set_squelch_status(freedv_proc_t params, int status);
+
+
+#endif /* SCHED_WAVEFORM_H_ */

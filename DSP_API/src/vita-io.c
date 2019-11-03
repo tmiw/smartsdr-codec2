@@ -32,11 +32,11 @@
 #include <assert.h>
 #include <poll.h>
 #include <time.h>
-#include <signal.h>
+#include <pthread.h>
 
-#include "vita-io.h"
-#include "common.h"
-#include "sched_waveform.h"
+#include "utils.h"
+#include "vita.h"
+#include "freedv-processor.h"
 #include "api-io.h"
 
 static int vita_sock;
@@ -146,18 +146,18 @@ unsigned short vita_init(freedv_proc_t params)
 
 	vita_sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
 	if (vita_sock == -1) {
-		output(ANSI_RED " Failed to initialize VITA socket: %s\n", strerror(errno));
+		output(" Failed to initialize VITA socket: %s\n", strerror(errno));
 		return 0;
 	}
 
 	if(bind(vita_sock, (struct sockaddr *)&bind_addr, sizeof(bind_addr))) {
-		output(ANSI_RED "error binding socket: %s\n",strerror(errno));
+		output("error binding socket: %s\n",strerror(errno));
 		close(vita_sock);
 		return 0;
 	}
 
 	if(connect(vita_sock, (struct sockaddr *) &radio_addr, sizeof(struct sockaddr_in)) == -1) {
-		output(ANSI_RED "Couldn't connect socket: %s\n", strerror(errno));
+		output("Couldn't connect socket: %s\n", strerror(errno));
 		close(vita_sock);
 		return 0;
 	}
@@ -176,15 +176,15 @@ unsigned short vita_init(freedv_proc_t params)
 
 void vita_stop()
 {
-    if (freedv_params) {
-        freedv_destroy(freedv_params);
-        freedv_params = NULL;
-    }
-
     if (vita_processing_thread_abort == false) {
         vita_processing_thread_abort = true;
         pthread_join(vita_processing_thread, NULL);
         close(vita_sock);
+    }
+
+    if (freedv_params) {
+        freedv_destroy(freedv_params);
+        freedv_params = NULL;
     }
 }
 

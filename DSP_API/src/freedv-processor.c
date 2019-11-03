@@ -1,28 +1,27 @@
 // SPDX-Licence-Identifier: GPL-3.0-or-later
-/* *****************************************************************************
+/*
+ * freedv-processor.c - FreeDV sample processing
  *
- *  Copyright (C) 2014-2019 FlexRadio Systems.
+ * Author: Annaliese McDermond <nh6z@nh6z.net>
  *
- *  This program is free software: you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License as published by
- *  the Free Software Foundation, either version 3 of the License, or
- *  (at your option) any later version.
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- *  GNU General Public License for more details.
- *  You should have received a copy of the GNU General Public License
- *  along with this program. If not, see <http://www.gnu.org/licenses/>.
+ * Copyright 2019 Annaliese McDermond
  *
- *  Contact Information:
- *  email: gpl<at>flexradiosystems.com
- *  Mail:  FlexRadio Systems, Suite 1-150, 4616 W. Howard LN, Austin, TX 78728
+ * This file is part of smartsdr-codec2.
  *
- *  Author: Ed Gonzalez
- *  Author: Graham (KE9H)
- *  Author: Annaliese McDermond <nh6z@nh6z.net>
+ * smartsdr-codec2 is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
  *
- * ************************************************************************** */
+ * Foobar is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with smartsdr-codec2.  If not, see <https://www.gnu.org/licenses/>.
+ *
+ */
 #define _GNU_SOURCE
 
 #include <stdio.h>
@@ -33,20 +32,21 @@
 #include <assert.h>
 #include <errno.h>
 #include <arpa/inet.h>
-#include <stdbool.h>
-#include <signal.h>
 
 #include "modem_stats.h"
 
 #include "soxr.h"
 
-#include "sched_waveform.h"
+#include "freedv-processor.h"
 #include "utils.h"
 #include "vita-io.h"
 #include "ringbuf.h"
 #include "api.h"
 
-static bool _end_of_transmission = false;
+#define RADIO_SAMPLE_RATE 24000
+#define FREEDV_SAMPLE_RATE 8000
+#define SAMPLE_RATE_RATIO (RADIO_SAMPLE_RATE / FREEDV_SAMPLE_RATE)
+#define PACKET_SAMPLES  128
 
 struct freedv_proc_t {
     pthread_t thread;
@@ -57,7 +57,7 @@ struct freedv_proc_t {
     ringbuf_t tx_input_buffer;
     enum freedv_xmit_state xmit_state;
 
-    // XXX Meter table?
+    // TODO: Meter table?
 };
 
 struct meter_def meter_table[] = {
@@ -70,8 +70,6 @@ struct meter_def meter_table[] = {
         { 0, "fdv-ber", 0.0f, 10000000.0f, "RPM" },
         { 0, "", 0.0f, 0.0f, "" }
 };
-
-#define PACKET_SAMPLES  128
 
 static struct my_callback_state
 {
@@ -132,7 +130,7 @@ void freedv_set_string(uint32_t slice, char* string)
 {
     strcpy(_my_cb_state.tx_str, string);
     _my_cb_state.ptx_str = _my_cb_state.tx_str;
-    output(ANSI_MAGENTA "new TX string is '%s'\n",string);
+    output("new TX string is '%s'\n",string);
 }
 
 static void freedv_send_meters(struct freedv *freedv)
@@ -161,6 +159,8 @@ static void freedv_send_meters(struct freedv *freedv)
 
 void freedv_queue_samples(freedv_proc_t params, int tx, size_t len, uint32_t *samples)
 {
+    assert(params != NULL);
+
     unsigned int num_samples = len / sizeof(uint32_t);
     ringbuf_t buffer = tx ? params->tx_input_buffer : params->rx_input_buffer;
 
@@ -200,10 +200,6 @@ static void freedv_processing_loop_cleanup(void *arg)
     ringbuf_free(&params->rx_input_buffer);
     ringbuf_free(&params->tx_input_buffer);
 }
-
-#define RADIO_SAMPLE_RATE 24000
-#define FREEDV_SAMPLE_RATE 8000
-#define SAMPLE_RATE_RATIO (RADIO_SAMPLE_RATE / FREEDV_SAMPLE_RATE)
 
 static void *_sched_waveform_thread(void *arg)
 {
@@ -398,8 +394,10 @@ freedv_proc_t freedv_init(int mode)
 
 void freedv_destroy(freedv_proc_t params)
 {
-    params->running = 0;
-    pthread_join(params->thread, NULL);
+    if (params->running) {
+        params->running = 0;
+        pthread_join(params->thread, NULL);
+    }
     free(params);
 }
 
@@ -413,6 +411,20 @@ void freedv_set_mode(freedv_proc_t params, int mode)
     }
 
     freedv_setup(params, mode);
+}
+
+void freedv_set_squelch_level(freedv_proc_t params, float squelch)
+{
+    if (params == NULL)
+        return;
+
+    output("Setting squelch to %f\n", squelch);
+    freedv_set_snr_squelch_thresh(params->fdv, squelch);
+}
+
+void freedv_set_squelch_status(freedv_proc_t params, int status)
+{
+    freedv_set_squelch_en(params->fdv, status);
 }
 
 int freedv_proc_get_mode(freedv_proc_t params)

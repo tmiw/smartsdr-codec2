@@ -1,39 +1,29 @@
-///*!	\file vita_output.h
-// *	\brief transmit vita packets to the Ethernet
-// *
-// *	\copyright	Copyright 2012-2013 FlexRadio Systems.  All Rights Reserved.
-// *				Unauthorized use, duplication or distribution of this software is
-// *				strictly prohibited by law.
-// *
-// *	\date 2-APR-2012
-// *	\author Stephen Hicks, N5AC
-// *
-// */
-
-/* *****************************************************************************
+// SPDX-Licence-Identifier: GPL-3.0-or-later
+/*
+ * vita-io.h - Support for VITA-49 data socket of FlexRadio 6000 units.
  *
- *  Copyright (C) 2012-2014 FlexRadio Systems.
+ * Author: Annaliese McDermond <nh6z@nh6z.net>
  *
- *  This program is free software: you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License as published by
- *  the Free Software Foundation, either version 3 of the License, or
- *  (at your option) any later version.
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- *  GNU General Public License for more details.
- *  You should have received a copy of the GNU General Public License
- *  along with this program. If not, see <http://www.gnu.org/licenses/>.
+ * Copyright 2019 Annaliese McDermond
  *
- *  Contact Information:
- *  email: gpl<at>flexradiosystems.com
- *  Mail:  FlexRadio Systems, Suite 1-150, 4616 W. Howard LN, Austin, TX 78728
+ * This file is part of smartsdr-codec2.
  *
- * ************************************************************************** */
-#ifndef VITA_OUTPUT_H_
+ * smartsdr-codec2 is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * Foobar is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ * You should have received a copy of the GNU General Public License
+ * along with smartsdr-codec2.  If not, see <https://www.gnu.org/licenses/>.
+ *
+ */#ifndef VITA_OUTPUT_H_
 #define VITA_OUTPUT_H_
 
-#include "sched_waveform.h"
+#include "freedv-processor.h"
 
 void vita_output_Init(const char * ip );
 void hal_Listener_Init(void);

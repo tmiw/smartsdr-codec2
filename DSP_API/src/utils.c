@@ -27,6 +27,13 @@
 #include <stdio.h>
 #include <math.h>
 #include <stdarg.h>
+#include <assert.h>
+#include <stdlib.h>
+#include <ctype.h>
+
+#include "utils.h"
+
+#define MAX_ARGS 128
 
 void output(const char *fmt,...)
 {
@@ -38,11 +45,83 @@ void output(const char *fmt,...)
     va_end(args);
 }
 
+struct kwarg {
+    char *key;
+    char *value;
+    struct kwarg *next;
+};
+
+static void kwarg_add(struct kwarg **args, char *token)
+{
+    assert(token != NULL);
+
+    struct kwarg *current_arg;
+    if (*args == NULL) {
+        current_arg = *args = (struct kwarg *) malloc(sizeof(struct kwarg));
+    } else {
+        for (current_arg = *args; current_arg->next != NULL; current_arg = current_arg->next);
+        current_arg->next = (struct kwarg *) malloc(sizeof(struct kwarg));
+        current_arg = current_arg->next;
+    }
+
+    current_arg->next = NULL;
+    current_arg->value = current_arg->key = token;
+    strsep(&current_arg->value, "=");
+    if (current_arg->value == NULL) {
+        output("Couldn't find delimeter in %s\n", token);
+        current_arg->value = "";
+    }
+}
+
+void kwargs_destroy(struct kwarg **args)
+{
+    struct kwarg *current_arg, *next_arg;
+    for (current_arg = *args, next_arg = (*args)->next; next_arg != NULL; current_arg = next_arg, next_arg = current_arg->next) {
+        free(current_arg);
+    }
+    free(current_arg);
+    *args = NULL;
+}
+
+char *find_kwarg(struct kwarg *args, char *key)
+{
+    if (args == NULL)
+        return NULL;
+
+    for(struct kwarg *current_arg = args; current_arg != NULL; current_arg = current_arg->next) {
+        if(strcmp(current_arg->key, key) == 0) {
+            return current_arg->value;
+        }
+    }
+}
+
+struct kwarg *parse_kwargs(char **argv, int argc, int start)
+{
+    struct kwarg *kwargs = NULL;
+
+    for (int i = start; i < argc; ++i)
+        kwarg_add(&kwargs, argv[i]);
+
+    return kwargs;
+}
+
+static char * trim(char *string)
+{
+    char *end;
+
+    for (end = string + strlen(string) - 1; end > string && isspace((unsigned char) *end); end--);
+    end[1] = '\0';
+
+    return string;
+}
+
 int parse_argv(char *string, char **argv, int max_args)
 {
 	char **argptr;
 	char *argsstring;
 	int argc = 1;
+
+	trim(string);
 
 	argsstring = string;
 	for(argptr = argv; (*argptr = strsep(&argsstring, " \t")) != NULL; ++argc)
@@ -53,7 +132,30 @@ int parse_argv(char *string, char **argv, int max_args)
 	return(argc - 1);
 }
 
-short float_to_fixed(double input, char fractional_bits)
+short float_to_fixed(double input, unsigned char fractional_bits)
 {
-    return (short)(round(input * (1 << fractional_bits)));
+    return (short)(round(input * (1u << fractional_bits)));
+}
+
+int dispatch_from_table(char *message, const struct dispatch_entry *dispatch_table)
+{
+    char *argv[MAX_ARGS];
+    int argc;
+    int i;
+
+    assert(message != NULL);
+    assert(dispatch_table != NULL);
+
+    argc = parse_argv(message, argv, MAX_ARGS);
+    if (argc < 1)
+        return -1;
+
+    for (i = 0; strlen(dispatch_table[i].name) > 0; ++i) {
+        if (strncmp(dispatch_table[i].name, argv[0], 256) == 0) {
+            assert(dispatch_table[i].handler != NULL);
+            return (dispatch_table[i].handler)(argv, argc);
+        }
+    }
+
+    return -1;
 }

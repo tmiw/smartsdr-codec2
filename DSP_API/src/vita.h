@@ -1,4 +1,27 @@
-
+// SPDX-Licence-Identifier: GPL-3.0-or-later
+/*
+ * vita.h - VITA-49 Packet Layouts and Constants
+ *
+ * Author: Annaliese McDermond <nh6z@nh6z.net>
+ *
+ * Copyright 2019 Annaliese McDermond
+ *
+ * This file is part of smartsdr-codec2.
+ *
+ * smartsdr-codec2 is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * Foobar is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with smartsdr-codec2.  If not, see <https://www.gnu.org/licenses/>.
+ *
+ */
 
 #ifndef _VITA_H
 #define _VITA_H
