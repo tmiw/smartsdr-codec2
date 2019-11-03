@@ -40,11 +40,14 @@
 
 typedef struct freedv_proc_t *freedv_proc_t;
 
+enum freedv_xmit_state { READY, PTT_REQUESTED, TRANSMITTING, UNKEY_REQUESTED };
+
 freedv_proc_t freedv_init(int mode);
 void freedv_set_mode(freedv_proc_t params, int mode);
 void freedv_queue_samples(freedv_proc_t params, int tx, size_t len, uint32_t *samples);
 void freedv_destroy(freedv_proc_t params);
 int freedv_proc_get_mode(freedv_proc_t params);
+void freedv_set_xmit_state(freedv_proc_t params, enum freedv_xmit_state state);
 void freedv_unkey(freedv_proc_t params);
 
 #endif /* SCHED_WAVEFORM_H_ */

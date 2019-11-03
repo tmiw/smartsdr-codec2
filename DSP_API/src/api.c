@@ -107,7 +107,8 @@ static void change_from_fdv_mode(unsigned char slice)
 	active_slice = -1;
 }
 
-static int process_slice_status(char **argv, int argc) {
+static int process_slice_status(char **argv, int argc)
+{
 	int i;
 	int slice;
 	char *value;
@@ -156,8 +157,43 @@ static int process_slice_status(char **argv, int argc) {
 	return 0;
 }
 
+static int process_interlock_status(char **argv, int argc)
+{
+    if (freedv_params == NULL)
+        return -1;
+
+    if (argc < 2) {
+        output("Not enough arguments to slice status message (%d)\n", argc);
+        return -1;
+    }
+
+    for (int i = 1; i < argc; ++i) {
+        char *value = argv[i];
+        strsep(&value, "=");
+        if (value == NULL) {
+            output("Couldn't find delimeter in %s\n", argv[i]);
+            continue;
+        }
+
+        if(strcmp("state", argv[i]) == 0) {
+            output("Interlock changed state to %s\n", value);
+            if (strcmp("READY", value) == 0)
+                freedv_set_xmit_state(freedv_params, READY);
+            else if (strcmp("PTT_REQUESTED", value) == 0)
+                freedv_set_xmit_state(freedv_params, PTT_REQUESTED);
+            else if (strcmp("TRANSMITTING", value) == 0)
+                freedv_set_xmit_state(freedv_params, TRANSMITTING);
+            else if (strcmp("UNKEY_REQUESTED", value) == 0)
+                freedv_set_xmit_state(freedv_params, UNKEY_REQUESTED);
+            else
+                output("Unknown interlock state %s\n", value);
+        }
+    }
+}
+
 static const struct dispatch_entry status_dispatch_table[] = {
 	{ "slice", &process_slice_status },
+    { "interlock", &process_interlock_status },
 	{ "", NULL },
 };
 
