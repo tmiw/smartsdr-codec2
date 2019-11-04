@@ -93,6 +93,8 @@ char *find_kwarg(struct kwarg *args, char *key)
             return current_arg->value;
         }
     }
+
+    return NULL;
 }
 
 struct kwarg *parse_kwargs(char **argv, int argc, int start)

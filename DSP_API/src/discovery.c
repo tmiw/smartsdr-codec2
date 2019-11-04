@@ -39,7 +39,6 @@
 #include "vita.h"
 
 #define DISCOVERY_PORT		4992
-
 #define MAX_DISCOVERY_ARGC	 128
 
 static const int one = 1;
@@ -47,11 +46,9 @@ static const int one = 1;
 int parse_discovery_packet(struct vita_packet *packet, struct sockaddr_in *addr)
 {
 	char *argv[MAX_DISCOVERY_ARGC];
-	char **argptr;
-	char *argsstring;
-	int argc = 1;
-	int i;
-	int port;
+	struct kwarg *kwargs = NULL;
+	char *value;
+	int argc;
 
 	if(packet->class_id != DISCOVERY_CLASS_ID) {
 		output("Received packet with invalid ID: 0x%llX\n", packet->class_id);
@@ -68,38 +65,43 @@ int parse_discovery_packet(struct vita_packet *packet, struct sockaddr_in *addr)
 		return -1;
 	}
 
-	//  XXX Probably better KVP handling here.  Maybe steal something?
-	argsstring = packet->raw_payload;
-	for(argptr = argv; (*argptr = strsep(&argsstring, " \t")) != NULL; ++argc)
-		if (**argptr != '\0')
-			if (++argptr >= &argv[MAX_DISCOVERY_ARGC])
-				break;
+	argc = parse_argv((char *) packet->raw_payload, argv, MAX_DISCOVERY_ARGC);
+	if ((kwargs = parse_kwargs(argv, argc, 0)) == NULL)
+	    return -1;
 
-	for(i = 0; i < argc; i++) {
-		char *value = argv[i];
-		char *name = strsep(&value, "=");
+	if ((value = find_kwarg(kwargs, "ip"))) {
+	    if (inet_aton(value, &addr->sin_addr) == 0) {
+	        output("Received packet  has invalid iP: %s\n", value);
+	        goto fail;
+	    }
+	} else {
+	    goto fail;
+	}
 
-		//  We didn't find anything, this is an error, just continue
-		if(value == NULL)
-			continue;
+	if ((value = find_kwarg(kwargs, "port"))) {
+	    char *end;
+	    unsigned long port;
 
-		if(strncmp(name, "ip", strlen("ip")) == 0) {
-			if (inet_aton(value, &addr->sin_addr) == 0) {
-				output("Received packet has invalid ip: %s\n", value);
-				return -1;
-			}
-		} else if(strncmp(name, "port", strlen("port")) == 0) {
-			// XXX Error checking in strtol(3) here
-			port = strtol(value, NULL, 0);
-			if(port < 1 || port == LONG_MAX) {
-				output("Received packet has invalid port: %s\n", value);
-				return -1;
-			}
-			addr->sin_port = htons(port);
-		}
+	    errno = 0;
+        port = strtoul(value, &end, 10);
+	    if (*end)
+	        goto fail;
+	    if (errno)
+	        goto fail;
+
+	    if (port > USHRT_MAX)
+	        goto fail;
+
+        addr->sin_port = htons(port);
+	} else {
+	   goto fail;
 	}
 
 	return 0;
+
+    fail:
+    free(kwargs);
+    return -1;
 }
 int discover_radio(struct sockaddr_in *addr)
 {

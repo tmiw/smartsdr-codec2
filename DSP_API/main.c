@@ -34,10 +34,7 @@
 #include "discovery.h"
 #include "api-io.h"
 #include "vita-io.h"
-#include "api.h"
 #include "utils.h"
-
-//#include "common.h"
 
 const char* APP_NAME = "FreeDV";            // Name of Application
 
@@ -52,7 +49,6 @@ int main(int argc, char **argv)
     sigemptyset(&stop_sigs);
     sigaddset(&stop_sigs, SIGINT);
     sigaddset(&stop_sigs, SIGTERM);
-    sigprocmask(SIG_BLOCK, &stop_sigs, NULL);
 
 	// XXX TODO: Loop around discovery/initiate?
 
@@ -84,6 +80,7 @@ int main(int argc, char **argv)
     send_api_command("waveform set FreeDV-LSB rx_filter depth=8");
     send_api_command("waveform set FreeDV-LSB tx_filter depth=8");
 
+    sigprocmask(SIG_BLOCK, &stop_sigs, NULL);
     while (sigwaitinfo(&stop_sigs, NULL) < 0 && errno == EINTR);
 
     output("Program stop requested.  Shutting Down\n");
