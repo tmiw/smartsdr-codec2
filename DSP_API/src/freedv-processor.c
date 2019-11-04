@@ -164,8 +164,8 @@ void freedv_queue_samples(freedv_proc_t params, int tx, size_t len, uint32_t *sa
     unsigned int num_samples = len / sizeof(uint32_t);
     ringbuf_t buffer = tx ? params->tx_input_buffer : params->rx_input_buffer;
 
-    for (unsigned int i = 0, j = 0; i < num_samples / 2; ++i, j += 2)
-        samples[i] = ntohl(samples[j]);
+    for (unsigned int i = 0; i < num_samples / 2; ++i)
+        samples[i] = ntohl(samples[i * 2]);
 
     ringbuf_memcpy_into (buffer, samples, (num_samples / 2) * sizeof(uint32_t));
     sem_post(&params->input_sem);
