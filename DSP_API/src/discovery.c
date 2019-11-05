@@ -97,10 +97,11 @@ int parse_discovery_packet(struct vita_packet *packet, struct sockaddr_in *addr)
 	   goto fail;
 	}
 
+	kwargs_destroy(&kwargs);
 	return 0;
 
     fail:
-    free(kwargs);
+    kwargs_destroy(&kwargs);
     return -1;
 }
 int discover_radio(struct sockaddr_in *addr)

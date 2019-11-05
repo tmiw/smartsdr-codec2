@@ -107,7 +107,7 @@ struct kwarg *parse_kwargs(char **argv, int argc, int start)
     return kwargs;
 }
 
-static char * trim(char *string)
+static char *trim(char *string)
 {
     char *end;
 

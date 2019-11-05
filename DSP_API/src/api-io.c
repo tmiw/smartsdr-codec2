@@ -91,9 +91,12 @@ static void add_sequence_to_response_queue(unsigned int sequence)
 static void complete_response_entry(unsigned int sequence, unsigned int code, char *message)
 {
 	struct response_queue_entry *current_entry;
+	int found = 0;
 
-	if (response_queue_head == NULL)
-		return;
+	if (response_queue_head == NULL) {
+	    free(message);
+        return;
+    }
 
 	pthread_mutex_lock(&response_queue_lock);
 	for (current_entry = response_queue_head; current_entry != NULL; current_entry = current_entry->next) {
@@ -101,10 +104,14 @@ static void complete_response_entry(unsigned int sequence, unsigned int code, ch
 			current_entry->code = code;
 			current_entry->message = message;
 			sem_post(&response_queue_sem);
+			found = 1;
 			break;
 		}
 	}
 	pthread_mutex_unlock(&response_queue_lock);
+
+	if(!found)
+	    free(message);
 }
 
 static struct response_queue_entry *pop_response_with_sequence(unsigned int sequence)
@@ -134,6 +141,25 @@ static struct response_queue_entry *pop_response_with_sequence(unsigned int sequ
 
 	pthread_mutex_unlock(&response_queue_lock);
 	return current_entry;
+}
+
+static void destroy_response_queue()
+{
+    struct response_queue_entry *current_entry, *next_entry;
+
+    if (response_queue_head == NULL)
+        return;
+
+    for (current_entry = response_queue_head, next_entry = response_queue_head->next; next_entry != NULL; current_entry = next_entry, next_entry = current_entry->next) {
+        if (current_entry->message)
+            free(current_entry->message);
+        free(current_entry);
+    }
+
+    if (current_entry->message)
+        free(current_entry->message);
+    free(current_entry);
+    response_queue_head = NULL;
 }
 
 static void process_api_line(char *line)
@@ -330,6 +356,7 @@ void api_io_stop()
     api_io_abort = true;
     pthread_join(api_io_thread, NULL);
     close(api_io_socket);
+    destroy_response_queue();
 }
 
 unsigned int send_api_command(char *command, ...)

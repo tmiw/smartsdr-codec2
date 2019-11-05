@@ -215,23 +215,23 @@ static int process_slice_command(char **argv, int argc) {
 
         //  Invalid mode
         if (!found)
-            return -1;
+            goto fail;
     } else if ((value = find_kwarg(kwargs, "fdv-set-squelch-level"))) {
         float squelch;
         char *end;
 
         if (strlen(value) == 0)
-            return -1;
+            goto fail;
 
         errno = 0;
         squelch = strtof(value, &end);
         if(*end) {
             output("Invalid squelch value: %s\n",value);
-            return -1;
+            goto fail;
         }
         if (errno) {
             output("Error converting squelch value: %s\n", strerror(errno));
-            return -1;
+            goto fail;
         }
 
         freedv_set_squelch_level(freedv_params, squelch);
@@ -241,14 +241,18 @@ static int process_slice_command(char **argv, int argc) {
         else if (strcmp(value, "false") == 0)
             freedv_set_squelch_status(freedv_params, 0);
         else
-            return -1;
+            goto fail;
     } else {
         //  Invalid command
-        return -1;
+        goto fail;
     }
     kwargs_destroy(&kwargs);
 
     return 0;
+
+    fail:
+    kwargs_destroy(&kwargs);
+    return -1;
 }
 
 static const struct dispatch_entry command_dispatch_table[] = {
@@ -294,6 +298,7 @@ int register_meters(struct meter_def *meters)
 
 		if (response_code != 0) {
 			output("Failed to register meter %s\n", meters[i].name);
+			free(response_message);
 			return -1;
 		}
 
