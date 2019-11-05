@@ -1,7 +1,3 @@
-[submodule "DSP_API/codec2"]
-	path = DSP_API/codec2
-	url = https://github.com/drowe67/codec2.git
-	branch = master
 [submodule "DSP_API/soxr-code"]
 	path = DSP_API/soxr-code
 	url = https://git.code.sf.net/p/soxr/code
