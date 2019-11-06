@@ -58,7 +58,7 @@ Compiling for ARM
 To compile for arm, you'll need to make sure you use the proper CMake build type.  There are two of them, one for
 Debug and one for Release.  They are named ARMDebug and ARMRelease respectively.  To compile for Debug on ARM use
 the following commands.  Once again **make sure you have the cross-compilation tools built in the previous section
-in your `$PATH` or this will not work.
+in your `$PATH` or this will not work**.
 
 ```asm
 cd smartsdr-codec2/DSP_API
