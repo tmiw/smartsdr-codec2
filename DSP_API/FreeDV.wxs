@@ -1,0 +1,37 @@
+<?xml version='1.0' encoding='windows-1252'?>
+<Wix xmlns='http://schemas.microsoft.com/wix/2006/wi'>
+  <Product Name='SmartSDR FreeDV Waveform' Id='E1F774E8-ECD7-47D7-BA6A-22FBAC3E6EF0' UpgradeCode='214CBBC0-F874-4C4E-89FE-A48CA389606B'
+    Language='1033' Codepage='1252' Version='2.0.0' Manufacturer='FlexRadio Systems'>
+
+    <Package Id='*' Keywords='Installer' Description="SmartSDR FreeDV Waveform 2.0 Installer"
+      Manufacturer='FlexRadio Systems'
+      InstallerVersion='200' Languages='1033' Compressed='yes' SummaryCodepage='1252' />
+
+    <Media Id='1' Cabinet='FreeDV.cab' EmbedCab='yes' DiskPrompt="CD-ROM #1" />
+    <Property Id='DiskPrompt' Value="SmartSDR FreeDV Waveform 2.0 Installation [1]" />
+
+    <Directory Id='TARGETDIR' Name='SourceDir'>
+      <Directory Id='AppDataFolder'>
+        <Directory Id='FlexRadioSystems' Name='FlexRadio Systems'>
+          <Directory Id="WaveformsDir" Name="Waveforms">
+            <Component Id="Waveforms" Guid="1991727D-D109-4C68-97DF-F024B83A5BB5">
+                <CreateFolder />
+            </Component>
+          </Directory>
+        </Directory>
+      </Directory>
+    </Directory>
+
+    <DirectoryRef Id="WaveformsDir">
+        <Component Id='MainExecutable' Guid='2881FCAF-7190-4293-8B71-562FF6ED2265'>
+          <File Id='FreeDVWaveform' Name='FreeDV.ssdr_waveform' DiskId='1' Source='FreeDV.ssdr_waveform' KeyPath='yes'/>
+        </Component>
+    </DirectoryRef>
+
+    <Feature Id='Complete' Level='1'>
+      <ComponentRef Id='Waveforms' />
+      <ComponentRef Id='MainExecutable' />
+    </Feature>
+
+  </Product>
+</Wix>

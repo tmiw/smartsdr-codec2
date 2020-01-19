@@ -87,3 +87,17 @@ add_dependencies(waveform codec2 soxr)
 add_executable(freedv main.c)
 target_include_directories(freedv PRIVATE src ${CODEC2_INCLUDE_DIR})
 target_link_libraries(freedv waveform m pthread rt ${CODEC2_LIB_PATH} ${SOXR_LIB_PATH})
+add_custom_target(create_zip
+        DEPENDS zipdir
+        COMMAND ${CMAKE_COMMAND} -E tar cv FreeDV.ssdr_waveform --format=zip --
+          "${CMAKE_CURRENT_BINARY_DIR}/FreeDV/freedv"
+          "${CMAKE_CURRENT_BINARY_DIR}/FreeDV/FreeDV.cfg")
+
+add_custom_command(OUTPUT zipdir
+        DEPENDS freedv
+        COMMAND ${CMAKE_COMMAND} -E copy
+          ${CMAKE_SOURCE_DIR}/FreeDV.cfg
+          ${CMAKE_CURRENT_BINARY_DIR}/FreeDV/FreeDV.cfg
+        COMMAND ${CMAKE_COMMAND} -E copy
+          ${CMAKE_CURRENT_BINARY_DIR}/freedv
+          ${CMAKE_CURRENT_BINARY_DIR}/FreeDV/freedv)
