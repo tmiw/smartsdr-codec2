@@ -40,6 +40,8 @@ int freedv_proc_get_mode(freedv_proc_t params);
 void freedv_set_xmit_state(freedv_proc_t params, enum freedv_xmit_state state);
 void freedv_set_squelch_level(freedv_proc_t params, float squelch);
 void freedv_set_squelch_status(freedv_proc_t params, int status);
+float freedv_proc_get_squelch_level(freedv_proc_t params);
+int freedv_proc_get_squelch_status(freedv_proc_t params);
 
 
 #endif /* SCHED_WAVEFORM_H_ */

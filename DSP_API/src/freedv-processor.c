@@ -56,6 +56,8 @@ struct freedv_proc_t {
     ringbuf_t rx_input_buffer;
     ringbuf_t tx_input_buffer;
     enum freedv_xmit_state xmit_state;
+    float squelch_level;
+    int squelch_enabled;
 
     // TODO: Meter table?
 };
@@ -419,15 +421,27 @@ void freedv_set_squelch_level(freedv_proc_t params, float squelch)
         return;
 
     output("Setting squelch to %f\n", squelch);
+    params->squelch_level = squelch;
     freedv_set_snr_squelch_thresh(params->fdv, squelch);
 }
 
 void freedv_set_squelch_status(freedv_proc_t params, int status)
 {
+    params->squelch_enabled = status;
     freedv_set_squelch_en(params->fdv, status);
 }
 
 int freedv_proc_get_mode(freedv_proc_t params)
 {
     return freedv_get_mode(params->fdv);
+}
+
+float freedv_proc_get_squelch_level(freedv_proc_t params)
+{
+    return params->squelch_level;
+}
+
+int freedv_proc_get_squelch_status(freedv_proc_t params)
+{
+    return params->squelch_enabled;
 }
