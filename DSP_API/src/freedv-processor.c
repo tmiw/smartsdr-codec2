@@ -396,6 +396,7 @@ freedv_proc_t freedv_init(int mode)
 }
 
 void freedv_destroy(freedv_proc_t params)
+void fdv_set_mode(freedv_proc_t params, int mode)
 {
     if (params->running) {
         params->running = 0;
@@ -404,7 +405,6 @@ void freedv_destroy(freedv_proc_t params)
     free(params);
 }
 
-void freedv_set_mode(freedv_proc_t params, int mode)
 {
     assert(params != NULL);
 

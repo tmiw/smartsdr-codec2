@@ -218,7 +218,7 @@ static int process_slice_command(char **argv, int argc) {
         int found = 0;
         for (unsigned long i = 0; i < ARRAY_SIZE(mode_table); ++i) {
             if (strcmp(mode_table[i].name, value) == 0) {
-                freedv_set_mode(freedv_params, mode_table[i].mode);
+                fdv_set_mode(freedv_params, mode_table[i].mode);
                 set_mode_filter(active_slice, &mode_table[i]);
                 found = 1;
             }
