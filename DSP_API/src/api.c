@@ -185,6 +185,8 @@ static int process_interlock_status(char **argv, int argc)
             freedv_set_xmit_state(freedv_params, TRANSMITTING);
         else if (strcmp("UNKEY_REQUESTED", state) == 0)
             freedv_set_xmit_state(freedv_params, UNKEY_REQUESTED);
+        else if (strcmp("RECEIVE", state) == 0)
+            freedv_set_xmit_state(freedv_params, RECEIVE);
         else
             output("Unknown interlock state %s\n", state);
     }

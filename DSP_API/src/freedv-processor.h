@@ -30,7 +30,7 @@
 #include "freedv_api.h"
 
 typedef struct freedv_proc_t *freedv_proc_t;
-enum freedv_xmit_state { READY, PTT_REQUESTED, TRANSMITTING, UNKEY_REQUESTED };
+enum freedv_xmit_state { READY, PTT_REQUESTED, TRANSMITTING, RECEIVE, UNKEY_REQUESTED };
 
 freedv_proc_t freedv_init(int mode);
 void freedv_set_mode(freedv_proc_t params, int mode);

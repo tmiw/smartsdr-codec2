@@ -271,6 +271,7 @@ static void *_sched_waveform_thread(void *arg)
         //         function.
 		switch(params->xmit_state) {
 		    case READY:
+		    case RECEIVE:
                 //  RX Processing
                 for (int radio_samples = freedv_nin(params->fdv) * SAMPLE_RATE_RATIO;
                      ringbuf_bytes_used(params->rx_input_buffer) >= radio_samples * sizeof(float);
