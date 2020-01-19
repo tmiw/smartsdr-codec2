@@ -65,6 +65,12 @@ static void set_mode_filter(int slice, const struct mode_entry *entry)
     }
 }
 
+static void send_waveform_status() {
+    for (unsigned long i = 0; i < ARRAY_SIZE(mode_table); ++i)
+        if (mode_table[i].mode == freedv_proc_get_mode(freedv_params))
+            send_api_command("waveform status slice=%d fdv-mode=%s fdv-squelch-enable=%d fdv-squelch-level=%d", active_slice, mode_table[i].name, freedv_proc_get_squelch_status(freedv_params), freedv_proc_get_squelch_level(freedv_params));
+}
+
 static void change_to_fdv_mode(unsigned char slice) {
     unsigned short vita_port;
 
@@ -76,6 +82,7 @@ static void change_to_fdv_mode(unsigned char slice) {
 
     if (active_slice >= 0) {
         output("Slice %u is using the waveform\n", active_slice);
+        send_waveform_status();
         return;
     }
 
@@ -100,6 +107,8 @@ static void change_to_fdv_mode(unsigned char slice) {
 	send_api_command("waveform set FreeDV-USB udpport=%d", vita_port);
     send_api_command("waveform set FreeDV-LSB udpport=%d", vita_port);
     send_api_command("client udpport %d", vita_port);
+
+    send_waveform_status();
 }
 
 static void change_from_fdv_mode(unsigned char slice)
@@ -248,6 +257,7 @@ static int process_slice_command(char **argv, int argc) {
     }
     kwargs_destroy(&kwargs);
 
+    send_waveform_status();
     return 0;
 
     fail:
