@@ -79,7 +79,7 @@ static void change_to_fdv_mode(unsigned char slice) {
             if (mode_table[i].mode == FREEDV_MODE_1600)
                 set_mode_filter(slice, &mode_table[i]);
     }
-
+    
     if (active_slice >= 0) {
         output("Slice %u is using the waveform\n", active_slice);
         send_waveform_status();

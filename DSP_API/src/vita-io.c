@@ -169,9 +169,15 @@ unsigned short vita_init(freedv_proc_t params)
 	}
 
     vita_processing_thread = (pthread_t) NULL;
-	pthread_create(&vita_processing_thread, NULL, &vita_processing_loop, NULL);
+    static const struct sched_param fifo_param = {
+            .sched_priority = 30
+    };
 
-	return ntohs(bind_addr.sin_port);
+	pthread_create(&vita_processing_thread, NULL, &vita_processing_loop, NULL);
+    pthread_setschedparam(vita_processing_thread, SCHED_FIFO, &fifo_param);
+
+
+    return ntohs(bind_addr.sin_port);
 }
 
 void vita_stop()
