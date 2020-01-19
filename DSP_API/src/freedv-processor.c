@@ -246,7 +246,6 @@ static void *_sched_waveform_thread(void *arg)
 	params->running = 1;
 	output("Starting processing thread...\n");
 
-    pthread_cleanup_push(freedv_processing_loop_cleanup, params);
     while (params->running) {
 		// wait for a buffer descriptor to get posted
 		if(clock_gettime(CLOCK_REALTIME, &timeout) == -1) {
@@ -330,7 +329,6 @@ static void *_sched_waveform_thread(void *arg)
 		        break;
 		}
 	}
-    pthread_cleanup_pop(!params->running);
 
 	output("Processing thread stopped...\n");
 
@@ -361,50 +359,52 @@ static void start_processing_thread(freedv_proc_t params)
 	pthread_setschedparam(params->thread, SCHED_FIFO, &fifo_param);
 }
 
-static void freedv_setup(freedv_proc_t params, int mode)
-{
-    sem_init(&params->input_sem, 0, 0);
-
-    if ((mode == FREEDV_MODE_700D) || (mode == FREEDV_MODE_2020)) {
-        struct freedv_advanced adv;
-        adv.interleave_frames = 1;
-        params->fdv = freedv_open_advanced(mode, &adv);
-    } else {
-        params->fdv = freedv_open(mode);
-    }
-
-//     freedv_set_squelch_en(params->fdv, 0);
-
-    assert(params->fdv != NULL);
-
-    unsigned long rx_ringbuffer_size = freedv_get_n_max_modem_samples(params->fdv) * sizeof(float) * 4;
-    params->rx_input_buffer = ringbuf_new (rx_ringbuffer_size);
-    params->tx_input_buffer = ringbuf_new (freedv_get_n_speech_samples(params->fdv) * sizeof(float) * 4);
-
-    params->xmit_state = READY;
-
-    start_processing_thread(params);
-}
-
-freedv_proc_t freedv_init(int mode)
-{
-    freedv_proc_t params = malloc(sizeof(struct freedv_proc_t));
-
-    freedv_setup(params, mode);
-
-    return params;
-}
-
 void freedv_destroy(freedv_proc_t params)
-void fdv_set_mode(freedv_proc_t params, int mode)
 {
     if (params->running) {
         params->running = 0;
         pthread_join(params->thread, NULL);
     }
+
+    sem_destroy(&params->input_sem);
+    freedv_close(params->fdv);
+    ringbuf_free(&params->rx_input_buffer);
+    ringbuf_free(&params->tx_input_buffer);
+
     free(params);
 }
 
+static void freedv_resize_ringbuf(ringbuf_t *buf, size_t newsize)
+{
+    newsize *= sizeof(float) * 10;
+
+    assert(newsize > PACKET_SAMPLES * sizeof(float) * 4);
+
+    if (newsize != ringbuf_capacity(*buf)) {
+        ringbuf_t oldbuf = *buf;
+        *buf = ringbuf_new(newsize);
+        ringbuf_free(&oldbuf);
+    }
+}
+
+static struct freedv *fdv_open(int mode)
+{
+    struct freedv *fdv;
+
+    if ((mode == FREEDV_MODE_700D) || (mode == FREEDV_MODE_2020)) {
+        struct freedv_advanced adv;
+        adv.interleave_frames = 1;
+        fdv = freedv_open_advanced(mode, &adv);
+    } else {
+        fdv = freedv_open(mode);
+    }
+
+    assert(fdv != NULL);
+
+    return fdv;
+}
+
+void fdv_set_mode(freedv_proc_t params, int mode)
 {
     assert(params != NULL);
 
@@ -413,7 +413,35 @@ void fdv_set_mode(freedv_proc_t params, int mode)
         pthread_join(params->thread, NULL);
     }
 
-    freedv_setup(params, mode);
+    freedv_close(params->fdv);
+    params->fdv = fdv_open(mode);
+
+    freedv_resize_ringbuf(&params->rx_input_buffer, freedv_get_n_max_modem_samples(params->fdv));
+    freedv_resize_ringbuf(&params->tx_input_buffer, freedv_get_n_speech_samples(params->fdv));
+
+    start_processing_thread(params);
+}
+
+freedv_proc_t freedv_init(int mode)
+{
+    freedv_proc_t params = malloc(sizeof(struct freedv_proc_t));
+
+    sem_init(&params->input_sem, 0, 0);
+    params->xmit_state = READY;
+
+    params->fdv = fdv_open(mode);
+
+    size_t rx_ringbuffer_size = freedv_get_n_max_modem_samples(params->fdv) * sizeof(float) * 10;
+    size_t tx_ringbuffer_size = freedv_get_n_speech_samples(params->fdv) * sizeof(float) * 10;
+    params->rx_input_buffer = ringbuf_new(rx_ringbuffer_size);
+    params->tx_input_buffer = ringbuf_new(tx_ringbuffer_size);
+
+    params->squelch_enabled = 0;
+    params->squelch_level = 0.0f;
+
+    start_processing_thread(params);
+
+    return params;
 }
 
 void freedv_set_squelch_level(freedv_proc_t params, float squelch)
