@@ -1,5 +1,7 @@
 language: c
 dist: bionic
+before_install:
+  - apt-get -y install gperf
 install:
   - wget http://crosstool-ng.org/download/crosstool-ng/crosstool-ng-1.23.0.tar.bz2 -O /tmp/ct.tar.bz2
   - tar -xvf /tmp/ct.tar.bz2
