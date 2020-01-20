@@ -1,0 +1,8 @@
+language: c
+dist: bionic
+install:
+  - wget http://crosstool-ng.org/download/crosstool-ng/crosstool-ng-1.23.0.tar.bz2 -O /tmp/ct.tar.bz2
+  - tar -xvf /tmp/ct.tar.bz2
+  - pushd crosstool-ng-1.23.0 && ./configure && make && sudo make install && popd
+  - mkdir /tmp/toolchain && cp extras/cg-ng.config /tmp/toolchain/.config
+  - pushd /tmp/toolchain && ct-ng oldconfig && ct-ng build && popd
