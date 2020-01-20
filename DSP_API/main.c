@@ -67,6 +67,8 @@ int main(int argc, char **argv)
 
 	output("Radio connected\n");
 	send_api_command("sub slice all");
+    if (meter_table[0].id == 0)
+        register_meters(meter_table);
 
 	//  TODO: These commands should be encapsulated in freedv handling code in
 	//        separate file.

@@ -28,6 +28,9 @@
 
 //  To import the constants to feed to fdv_set_mode
 #include "freedv_api.h"
+#include "api.h"
+
+extern struct meter_def meter_table[];
 
 typedef struct freedv_proc_t *freedv_proc_t;
 enum freedv_xmit_state { READY, PTT_REQUESTED, TRANSMITTING, RECEIVE, UNKEY_REQUESTED };

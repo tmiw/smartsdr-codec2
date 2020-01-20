@@ -258,9 +258,6 @@ static void *_sched_waveform_thread(void *arg)
     _my_cb_state.ptx_str = _my_cb_state.tx_str;
     freedv_set_callback_txt(params->fdv, &my_put_next_rx_char, &my_get_next_tx_char, &_my_cb_state);
 
-    if (meter_table[0].id == 0)
-        register_meters(meter_table);
-
 	params->running = 1;
 	output("Starting processing thread...\n");
 
