@@ -7,10 +7,14 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "Debug")
 endif()
 
-set(CMAKE_C_FLAGS_RELEASE "-Ofast")
-set(CMAKE_C_FLAGS_DEBUG "-g -Og")
-set(CMAKE_C_FLAGS_ARMRELEASE "-Ofast")
-set(CMAKE_C_FLAGS_ARMDEBUG "-g -Og")
+set(CMAKE_EXE_LINKER_FLAGS ${CMAKE_EXE_LINKER_FLAGS} -static)
+
+set(CMAKE_C_FLAGS_RELEASE "-Ofast -pg")
+set(CMAKE_C_FLAGS_DEBUG "-g -Og -pg")
+set(CMAKE_C_FLAGS_ARMRELEASE "-O2 -mfpu=neon -mcpu=cortex-a8")
+set(CMAKE_C_FLAGS_ARMDEBUG "-g -Og -pg -mfpu=neon -mcpu=cortex-a8")
+
+string(TOUPPER ${CMAKE_BUILD_TYPE} BUILD_TYPE_UC)
 
 if(CMAKE_BUILD_TYPE MATCHES ARMRelease)
   set(CMAKE_TOOLCHAIN_FILE ${CMAKE_SOURCE_DIR}/cmake-toolchains/flex6k.cmake)
@@ -52,6 +56,7 @@ ExternalProject_Add(codec2
         BUILD_COMMAND cmake --build . --target codec2
         INSTALL_COMMAND ""
         CMAKE_CACHE_ARGS
+          -DCMAKE_C_FLAGS:STRING=${CMAKE_C_FLAGS_${BUILD_TYPE_UC}}
           -DBUILD_SHARED_LIBS:BOOL=OFF
           -DUNITTEST:BOOL=OFF
           -DINSTALL_EXAMPLES:BOOL=OFF
@@ -72,6 +77,7 @@ ExternalProject_Add(soxr
         BUILD_COMMAND cmake --build . --target soxr
         INSTALL_COMMAND ""
         CMAKE_CACHE_ARGS
+          -DCMAKE_C_FLAGS:STRING=${CMAKE_C_FLAGS_${BUILD_TYPE_UC}}
           -DBUILD_SHARED_LIBS:BOOL=OFF
           -DWITH_OPENMP:BOOL=OFF
           -DWITH_LSR_BINDINGS:BOOL=OFF
@@ -88,7 +94,8 @@ add_dependencies(waveform codec2 soxr)
 
 add_executable(freedv main.c)
 target_include_directories(freedv PRIVATE src ${CODEC2_INCLUDE_DIR})
-target_link_libraries(freedv waveform m pthread rt ${CODEC2_LIB_PATH} ${SOXR_LIB_PATH})
+target_link_libraries(freedv waveform ${CODEC2_LIB_PATH} ${SOXR_LIB_PATH} m pthread rt)
+
 add_custom_target(create_zip
         DEPENDS zipdir
         COMMAND zip -r FreeDV.ssdr_waveform FreeDV)
