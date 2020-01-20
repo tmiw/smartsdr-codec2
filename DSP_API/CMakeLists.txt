@@ -108,3 +108,7 @@ add_custom_command(OUTPUT zipdir
         COMMAND ${CMAKE_COMMAND} -E copy
           ${CMAKE_CURRENT_BINARY_DIR}/freedv
           ${CMAKE_CURRENT_BINARY_DIR}/FreeDV/freedv)
+
+add_custom_target(create_installer
+        DEPENDS create_zip
+        COMMAND wixl -v ${CMAKE_CURRENT_SOURCE_DIR}/FreeDV.wxs -o FreeDV.msi)
