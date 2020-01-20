@@ -43,9 +43,11 @@ set(CMAKE_FIND_LIBRARY_SUFFIXES ".a")
 #  CODEC2 library
 ExternalProject_Add(codec2
         PREFIX codec2
-        GIT_REPOSITORY https://github.com/drowe67/codec2.git
-        GIT_SHALLOW ON
-        GIT_PROGRESS ON
+#        GIT_REPOSITORY https://github.com/drowe67/codec2.git
+#        GIT_TAG c515387982bbe9f0ea9d6d0f50884716c0b1c6c4
+        GIT_REPOSITORY https://github.com/mcdermj/codec2.git
+        GIT_SHALLOW OFF
+        GIT_PROGRESS OFF
         EXCLUDE_FROM_ALL ON
         BUILD_COMMAND cmake --build . --target codec2
         INSTALL_COMMAND ""
