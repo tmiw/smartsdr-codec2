@@ -62,15 +62,40 @@ struct freedv_proc_t {
     // TODO: Meter table?
 };
 
+inline static short snr_meter(struct freedv *freedv, struct MODEM_STATS *stats) {
+    return float_to_fixed(stats->snr_est, 6);
+}
+inline static short foff_meter(struct freedv *freedv, struct MODEM_STATS *stats) {
+    return float_to_fixed(stats->foff, 6);
+}
+inline static short clock_offset_meter(struct freedv *freedv, struct MODEM_STATS *stats) {
+    return float_to_fixed(stats->clock_offset, 6);
+}
+inline static short sync_meter(struct freedv *freedv, struct MODEM_STATS *stats) {
+    return float_to_fixed(stats->sync, 6);
+}
+inline static short bits_msb_meter(struct freedv *freedv, struct MODEM_STATS *stats) {
+    return freedv_get_total_bits(freedv);
+}
+inline static short bits_lsb_meter(struct freedv *freedv, struct MODEM_STATS *stats) {
+    return freedv_get_total_bits(freedv) >> 16;
+}
+inline static short errors_meter(struct freedv *freedv, struct MODEM_STATS *stats) {
+    return freedv_get_total_bit_errors(freedv);
+}
+inline static short ber_meter(struct freedv *freedv, struct MODEM_STATS *stats) {
+    return float_to_fixed(freedv_get_total_bit_errors(freedv)/(1E-6+freedv_get_total_bits(freedv)), 6);
+}
 struct meter_def meter_table[] = {
-        { 0, "fdv-snr", -100.0f, 100.0f, "DB" },
-        { 0, "fdv-foff", 0.0f, 1000000.0f, "DB" },
-        { 0, "fdv-clock-offset", 0.0f, 1000000.0f, "DB"},
-        { 0, "fdv-sync-quality", 0.0f, 1.0f, "DB"},
-        { 0, "fdv-total-bits", 0.0f, 1000000.0f, "RPM" },
-        { 0, "fdv-error-bits", 0.0f, 1000000.0f, "RPM" },
-        { 0, "fdv-ber", 0.0f, 10000000.0f, "RPM" },
-        { 0, "", 0.0f, 0.0f, "" }
+        { 0, "fdv-snr", -100.0f, 100.0f, "DB", snr_meter },
+        { 0, "fdv-foff", 0.0f, 1000000.0f, "DB", foff_meter },
+        { 0, "fdv-clock-offset", 0.0f, 1000000.0f, "DB", clock_offset_meter},
+        { 0, "fdv-sync-quality", 0.0f, 1.0f, "DB", sync_meter},
+        { 0, "fdv-total-bits-lsb", 0.0f, 1000000.0f, "RPM", bits_msb_meter },
+        { 0, "fdv-total-bits-msb", 0.0f, 1000000.0f, "RPM", bits_lsb_meter },
+        { 0, "fdv-error-bits", 0.0f, 1000000.0f, "RPM", errors_meter },
+        { 0, "fdv-ber", 0.0f, 10000000.0f, "RPM", ber_meter },
+        { 0, "", 0.0f, 0.0f, "", NULL }
 };
 
 static struct my_callback_state
@@ -137,24 +162,17 @@ void freedv_set_string(uint32_t slice, char* string)
 
 static void freedv_send_meters(struct freedv *freedv)
 {
-    short meter_block[7][2] = {0};
     int i;
     struct MODEM_STATS stats;
+    int num_meters = (sizeof(meter_table) / sizeof(struct meter_def)) -1;
+    short meter_block[num_meters][2];
 
     freedv_get_modem_extended_stats(freedv, &stats);
 
-    // XXX These need to be in order of the array definitions.
-    // XXX Yeah, I know, weak, but it works.
-    meter_block[0][1] = htons(float_to_fixed(stats.snr_est, 6));
-    meter_block[1][1] = htons(float_to_fixed(stats.foff, 6));
-    meter_block[2][1] = htons(float_to_fixed(stats.clock_offset, 6));
-    meter_block[3][1] = htons(float_to_fixed(stats.sync, 6));
-    meter_block[4][1] = htons(freedv_get_total_bits(freedv));
-    meter_block[5][1] = htons(freedv_get_total_bit_errors(freedv));
-    meter_block[6][1] = htons(float_to_fixed(freedv_get_total_bit_errors(freedv)/(1E-6+freedv_get_total_bits(freedv)), 6));
-
-    for (i = 0; i < 4; ++i)
+    for(i = 0; i < num_meters; ++i) {
         meter_block[i][0] = htons(meter_table[i].id);
+        meter_block[i][1] = htons(meter_table[i].set_func(freedv, &stats));
+    }
 
     vita_send_meter_packet(&meter_block, sizeof(meter_block));
 }

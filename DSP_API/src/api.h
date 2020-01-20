@@ -24,12 +24,17 @@
 #ifndef API_H
 #define API_H
 
+#include "freedv_api.h"
+
+typedef short (*meter_value_t)(struct freedv *, struct MODEM_STATS *);
+
 struct meter_def {
 	unsigned short	id;
 	char name[32];
 	float min;
 	float max;
 	char unit[16];  // TODO: enum?
+	meter_value_t set_func;
 };
 
 int process_status_message(char *message);
