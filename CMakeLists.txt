@@ -89,7 +89,7 @@ set(SOXR_LIB_PATH ${BINARY_DIR}/src/${CMAKE_STATIC_LIBRARY_PREFIX}soxr${CMAKE_ST
 
 #  Our code
 add_subdirectory(src)
-target_include_directories(waveform PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CODEC2_INCLUDE_DIR} ${SOXR_INCLUDE_DIR})
+target_include_directories(waveform PRIVATE ${CODEC2_INCLUDE_DIR} ${SOXR_INCLUDE_DIR})
 add_dependencies(waveform codec2 soxr)
 
 add_executable(freedv main.c)
@@ -111,4 +111,4 @@ add_custom_command(OUTPUT zipdir
 
 add_custom_target(create_installer
         DEPENDS create_zip
-        COMMAND wixl -v ${CMAKE_CURRENT_SOURCE_DIR}/FreeDV.wxs -o FreeDV.msi)
+        COMMAND wixl -v ${CMAKE_SOURCE_DIR}/FreeDV.wxs -o ${CMAKE_CURRENT_BINARY_DIR}/FreeDV.msi)

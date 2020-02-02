@@ -1,6 +1,5 @@
 language: bash
 dist: bionic
 script:
-  - cd DSP_API
   - mkdir build
   - docker run --rm -v `pwd`:/src mcdermj/flex6k-toolchain:latest bash -c "cd /src/build && cmake -DCMAKE_BUILD_TYPE=ARMRelease .. && make -j4 create_installer"
