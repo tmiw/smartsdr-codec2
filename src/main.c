@@ -45,7 +45,7 @@
 
 const char* APP_NAME = "FreeDV";            // Name of Application
 static const char *version = "2.0.0";
-static const char *githash = "xxxx";
+extern const char *GIT_REV;
 
 void signal_cb(evutil_socket_t sock, short what, void *ctx)
 {
@@ -66,7 +66,7 @@ int main(int argc, char **argv)
 	int ret;
 	struct event *terminate;
 
-	output("SmartSDR FreeDV Waveform v%s (%s)\n", version, githash);
+	output("SmartSDR FreeDV Waveform v%s (%s)\n", version, GIT_REV);
 	// XXX TODO: Loop around discovery/initiate?
 
 	radio_address.sin_family = AF_INET;

@@ -79,6 +79,7 @@ set(WAVEFORM_SRCS
     utils.c
     vita-io.c
     main.c
+    version.c
 )
 
 #  Our code
@@ -86,3 +87,9 @@ add_executable(freedv ${WAVEFORM_SRCS})
 add_dependencies(freedv codec2 soxr event_core)
 target_include_directories(freedv PRIVATE ${CODEC2_INCLUDE_DIR} ${SOXR_INCLUDE_DIR} ${EVENT_INCLUDE_DIR})
 target_link_libraries(freedv ${CODEC2_LIB_PATH} ${SOXR_LIB_PATH} ${EVENT_LIB_PATH} m pthread rt)
+
+ADD_CUSTOM_COMMAND(
+        OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/version.c
+        ${CMAKE_CURRENT_BINARY_DIR}/_version.c
+        COMMAND ${CMAKE_COMMAND} -P
+        ${CMAKE_SOURCE_DIR}/cmake/version.cmake)
