@@ -30,6 +30,13 @@
 #include <netinet/in.h>
 #include <signal.h>
 #include <errno.h>
+#include <poll.h>
+#include <pthread.h>
+#include <sched.h>
+
+#include "event2/event.h"
+#include "event2/bufferevent.h"
+#include "event2/buffer.h"
 
 #include "discovery.h"
 #include "api-io.h"
@@ -37,19 +44,29 @@
 #include "utils.h"
 
 const char* APP_NAME = "FreeDV";            // Name of Application
+static const char *version = "2.0.0";
+static const char *githash = "xxxx";
 
-// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-// 	main()
+void signal_cb(evutil_socket_t sock, short what, void *ctx)
+{
+    struct event_base *base = (struct event_base *) ctx;
+    if(what & EV_SIGNAL) {
+        output("Program stop requested.  Shutting Down\n");
+        event_base_loopexit(base, NULL);
+    }
+}
 
 int main(int argc, char **argv)
 {
 	struct sockaddr_in radio_address;
-    sigset_t stop_sigs;
+	struct event_base *base;
+	struct api *api;
+	pthread_t this_thread = pthread_self();
+	struct sched_param thread_param;
+	int ret;
+	struct event *terminate;
 
-    sigemptyset(&stop_sigs);
-    sigaddset(&stop_sigs, SIGINT);
-    sigaddset(&stop_sigs, SIGTERM);
-
+	output("SmartSDR FreeDV Waveform v%s (%s)\n", version, githash);
 	// XXX TODO: Loop around discovery/initiate?
 
 	radio_address.sin_family = AF_INET;
@@ -60,36 +77,32 @@ int main(int argc, char **argv)
 	}
 	output("Found radio at %s:%d\n", inet_ntoa(radio_address.sin_addr), ntohs(radio_address.sin_port));
 
-	if (api_io_init(&radio_address) == -1) {
-		output("Couldn't connect to radio\n");
-		exit(1);
-	}
+//	event_enable_debug_logging(EVENT_DBG_ALL);
+    base = event_base_new();
 
-	output("Radio connected\n");
-	send_api_command("sub slice all");
-    if (meter_table[0].id == 0)
-        register_meters(meter_table);
+    thread_param.sched_priority = sched_get_priority_max(SCHED_FIFO);
+    ret = pthread_setschedparam(this_thread, SCHED_FIFO, &thread_param);
+    if (ret != 0) {
+      output("Cannot set realtime priority, %s\n", strerror(ret));
+    }
 
-	//  TODO: These commands should be encapsulated in freedv handling code in
-	//        separate file.
-	send_api_command("waveform create name=FreeDV-USB mode=FDVU underlying_mode=USB version=2.0.0");
-	send_api_command("waveform set FreeDV-USB tx=1");
-    send_api_command("waveform set FreeDV-USB rx_filter depth=8");
-    send_api_command("waveform set FreeDV-USB tx_filter depth=8");
+    api = api_io_new(&radio_address, base);
+    if(!api) {
+        output("Error occurred connecting to radio\n");
+        exit(0);
+    }
 
-	send_api_command("waveform create name=FreeDV-LSB mode=FDVL underlying_mode=LSB version=2.0.0");
-	send_api_command("waveform set FreeDV-LSB tx=1");
-    send_api_command("waveform set FreeDV-LSB rx_filter depth=8");
-    send_api_command("waveform set FreeDV-LSB tx_filter depth=8");
+	// TODO: This should have a reference to the api loop passed so that we
+	//       can shut things down correctly.  We also probably need to send in
+	//       the base as well.
+    terminate = evsignal_new(base, SIGINT, signal_cb, base);
+    event_add(terminate, NULL);
 
-    sigprocmask(SIG_BLOCK, &stop_sigs, NULL);
-    while (sigwaitinfo(&stop_sigs, NULL) < 0 && errno == EINTR);
+    event_base_dispatch(base);
 
-    output("Program stop requested.  Shutting Down\n");
-    send_api_command("waveform remove FreeDV-USB");
-    vita_stop();
-    api_io_stop();
-	output("FreeDV Waveform Stopped.\n");
+    api_io_free(api);
+
+    output("FreeDV Waveform Stopped.\n");
     exit(0);
 }
 

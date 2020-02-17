@@ -37,11 +37,13 @@
 #include <poll.h>
 #include <stdlib.h>
 #include <assert.h>
-#include <semaphore.h>
-#include <stdbool.h>
-#include <stdarg.h>
 #include <limits.h>
 #include <signal.h>
+#include <stdarg.h>
+
+#include "event2/event.h"
+#include "event2/bufferevent.h"
+#include "event2/buffer.h"
 
 #include "api-io.h"
 #include "api.h"
@@ -51,140 +53,95 @@
 #define MAX_API_COMMAND_SIZE 1024
 
 struct response_queue_entry {
-	unsigned int sequence;
-	unsigned int code;
-	char *message;
+    unsigned int sequence;
+    response_cb cb;
+    void *ctx;
 	struct response_queue_entry *next;
 };
 
-static int api_io_socket;
-static unsigned int api_cmd_sequence;
-static unsigned int api_session_handle;
-static int api_version_major[2];
-static int api_version_minor[2];
-static bool api_io_abort = false;
-static pthread_t api_io_thread;
-static struct response_queue_entry *response_queue_head = NULL;
-static pthread_mutex_t response_queue_lock;
-static sem_t response_queue_sem;
+struct api {
+    unsigned int sequence;
+    unsigned int handle;
+    int api_version_major[2];
+    int api_version_minor[2];
+    struct response_queue_entry *rq_head;
+    struct bufferevent *bev;
+};
 
-static void add_sequence_to_response_queue(unsigned int sequence)
+static void add_sequence_to_response_queue(struct api *api, response_cb cb, void *ctx)
 {
 	struct response_queue_entry *new_entry, *current_entry;
 
 	new_entry = (struct response_queue_entry *) malloc(sizeof(struct response_queue_entry));
 
-	new_entry->sequence = sequence;
-	new_entry->code = 0xffffffff;
+	new_entry->cb = cb;
+	new_entry->sequence = api->sequence;
+	new_entry->ctx = ctx;
 	new_entry->next = NULL;
 
-	pthread_mutex_lock(&response_queue_lock);
-	if (response_queue_head == NULL) {
-		response_queue_head = new_entry;
+	if (api->rq_head == NULL) {
+		api->rq_head = new_entry;
 	} else {
-		for (current_entry = response_queue_head; current_entry->next != NULL; current_entry = current_entry->next);
+		for (current_entry = api->rq_head; current_entry->next != NULL; current_entry = current_entry->next);
 		current_entry->next = new_entry;
 	}
-	pthread_mutex_unlock(&response_queue_lock);
 }
 
-static void complete_response_entry(unsigned int sequence, unsigned int code, char *message)
+static void complete_response_entry(struct api *api, unsigned int sequence, unsigned int code, char *message)
 {
 	struct response_queue_entry *current_entry;
-	int found = 0;
+	struct response_queue_entry *head = api->rq_head;
 
-	if (response_queue_head == NULL) {
-	    free(message);
+	if (head == NULL)
         return;
-    }
 
-	pthread_mutex_lock(&response_queue_lock);
-	for (current_entry = response_queue_head; current_entry != NULL; current_entry = current_entry->next) {
+	for (current_entry = head; current_entry != NULL; current_entry = current_entry->next) {
 		if (current_entry->sequence == sequence) {
-			current_entry->code = code;
-			current_entry->message = message;
-			sem_post(&response_queue_sem);
-			found = 1;
+            current_entry->cb(api, current_entry->ctx, code, message);
 			break;
 		}
 	}
-	pthread_mutex_unlock(&response_queue_lock);
-
-	if(!found)
-	    free(message);
 }
 
-static struct response_queue_entry *pop_response_with_sequence(unsigned int sequence)
-{
-	struct response_queue_entry *current_entry, *last_entry;
-
-	assert(response_queue_head != NULL);
-
-	pthread_mutex_lock(&response_queue_lock);
-	for (current_entry = last_entry = response_queue_head;
-	     current_entry != NULL;
-	     last_entry = current_entry, current_entry = current_entry->next) {
-		if (current_entry->sequence == sequence)
-			break;
-	}
-
-	if (current_entry == NULL || current_entry->code == 0xffffffff) {
-		pthread_mutex_unlock(&response_queue_lock);
-		return NULL;
-	}
-
-	if (last_entry == current_entry) {
-		response_queue_head = NULL;
-	} else {
-		last_entry->next = current_entry->next;
-	}
-
-	pthread_mutex_unlock(&response_queue_lock);
-	return current_entry;
-}
-
-static void destroy_response_queue()
+static void destroy_response_queue(struct api *api)
 {
     struct response_queue_entry *current_entry, *next_entry;
 
-    if (response_queue_head == NULL)
+    if (api->rq_head == NULL)
         return;
 
-    for (current_entry = response_queue_head, next_entry = response_queue_head->next; next_entry != NULL; current_entry = next_entry, next_entry = current_entry->next) {
-        if (current_entry->message)
-            free(current_entry->message);
+    for (current_entry = api->rq_head, next_entry = api->rq_head->next; next_entry != NULL; current_entry = next_entry, next_entry = current_entry->next)
         free(current_entry);
-    }
 
-    if (current_entry->message)
-        free(current_entry->message);
     free(current_entry);
-    response_queue_head = NULL;
+    api->rq_head = NULL;
 }
 
-static void process_api_line(char *line)
+static void process_api_line(struct api *api, char *line)
 {
 	char *message, *endptr, *response_message;
 	int ret;
 	unsigned int handle, code, sequence;
+	unsigned int api_version[4];
 
 	output("Received: %s\n", line);
 
 	switch(*(line++)) {
 	case 'V':
+	    // TODO: Fix me so that I read into the api struct.
 		errno = 0;
-		ret = sscanf(line, "%d.%d.%d.%d", &api_version_major[0], &api_version_major[1], &api_version_minor[0], &api_version_minor[1]);
+		ret = sscanf(line, "%d.%d.%d.%d", &api_version[0], &api_version[1], &api_version[2], &api_version[3]);
 		if (ret != 4)
 			output("Error converting version string: %s\n", line);
 
-		output("Radio API Version: %d.%d(%d.%d)\n", api_version_major[1], api_version_major[1], api_version_minor[0], api_version_minor[1]);
+		output("Radio API Version: %d.%d(%d.%d)\n", api_version[0], api_version[1], api_version[2], api_version[3]);
 
 		break;
 	case 'H':
 		errno = 0;
-        api_session_handle = strtoul(line, &endptr, 16);
-        if ((errno == ERANGE && api_session_handle == ULONG_MAX) ||
-            (errno != 0 && api_session_handle == 0)) {
+            api->handle = strtoul(line, &endptr, 16);
+        if ((errno == ERANGE && api->handle == ULONG_MAX) ||
+            (errno != 0 && api->handle == 0)) {
             output("Error finding session handle: %s\n", strerror(errno));
             break;
         }
@@ -194,7 +151,7 @@ static void process_api_line(char *line)
             break;
         }
 
-		break;
+        break;
 	case 'S':
 		errno = 0;
 		handle = strtoul(line, &endptr, 16);
@@ -208,10 +165,9 @@ static void process_api_line(char *line)
             break;
         }
 
-        process_status_message(endptr + 1);
+        process_status_message(api, endptr + 1);
 		break;
 	case 'M':
-	    //  We don't handle messages
 		break;
 	case 'R':
 		errno = 0;
@@ -240,28 +196,23 @@ static void process_api_line(char *line)
             break;
         }
 
-        //  We need a copy of message because it needs to stick around
-        //  in the response queue until the radio responds.
-        message = (char *) malloc(strlen(response_message) + 1);
-        strcpy(message, response_message + 1);
-
-        complete_response_entry(sequence, code, message);
+        complete_response_entry(api, sequence, code, response_message + 1);
 		break;
 	case 'C':
-		errno = 0;
-        sequence = strtoul(line, &endptr, 10);
-        if ((errno == ERANGE && sequence == ULONG_MAX) ||
-            (errno != 0 && sequence == 0)) {
-            output("Error finding command sequence: %s\n", strerror(errno));
-            break;
-        }
-
-        if (line == endptr) {
-            output("Cannot find command sequence in: %s\n", line);
-            break;
-        }
-
-        process_waveform_command(sequence, endptr + 1);
+//		errno = 0;
+//        sequence = strtoul(line, &endptr, 10);
+//        if ((errno == ERANGE && sequence == ULONG_MAX) ||
+//            (errno != 0 && sequence == 0)) {
+//            output("Error finding command sequence: %s\n", strerror(errno));
+//            break;
+//        }
+//
+//        if (line == endptr) {
+//            output("Cannot find command sequence in: %s\n", line);
+//            break;
+//        }
+//
+//        process_waveform_command(sequence, endptr + 1);
 		break;
 	default:
 		output("Unknown command: %s\n", line);
@@ -269,155 +220,103 @@ static void process_api_line(char *line)
 	}
 }
 
-static void *api_io_processing_loop(void *arg)
+void api_io_free(struct api *api)
 {
-	char *line;
-	int ret;
-	ringbuf_t buffer;
-	size_t eol;
+    struct event_base *base = bufferevent_get_base(api->bev);
 
-	struct pollfd fds = {
-		.fd = api_io_socket,
-		.events = POLLIN,
-		.revents = 0,
-	};
-
-	buffer = ringbuf_new(4096);
-
-	output("Beginning API IO Loop...\n");
-	while (!api_io_abort) {
-		ret = poll(&fds, 1, 500);
-		if (ret == 0) {
-			// timeout
-			continue;
-		} else if (ret == -1) {
-			// error
-			output("Poll failed: %s\n", strerror(errno));
-			continue;
-		}
-
-		if (ringbuf_read(api_io_socket, buffer, ringbuf_bytes_free(buffer)) == -1) {
-            output("API IO read failed: %s\n", strerror(errno));
-            close(api_io_socket);
-            return (void *) -1;
-		}
-
-        while ((eol = ringbuf_findchr(buffer, '\n', 0)) != ringbuf_bytes_used(buffer)) {
-            line = (char *) malloc(eol + 1);
-            ringbuf_memcpy_from(line, buffer, eol + 1);
-
-            if (eol != 0) {
-                line[eol] = '\0';
-                process_api_line(line);
-            }
-            free(line);
-        }
-	}
-	output("API IO Loop Ending...\n");
-
-	ringbuf_free(&buffer);
-
-	close(api_io_socket);
-
-	return (void *) 0;
+    api_close(api);
+    destroy_response_queue(api);
+    bufferevent_free(api->bev);
 }
 
-int api_io_init(struct sockaddr_in *radio_addr)
+static void api_read_cb(struct bufferevent *bev, void *ctx)
 {
+    struct evbuffer *input_buffer;
+    char *line;
+    struct api *api = (struct api *) ctx;
 
-	api_io_socket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-	if (api_io_socket == -1) {
-		output("Failed to initialize TCP socket: %s\n", strerror(errno));
-		return -1;
-	}
+    input_buffer = bufferevent_get_input(bev);
 
-	if (connect(api_io_socket, (struct sockaddr *) radio_addr, sizeof(struct sockaddr_in)) == -1) {
-		output("Couldn't connect to %s:%d: %s\n", inet_ntoa(radio_addr->sin_addr), radio_addr->sin_port, strerror(errno));
-		close(api_io_socket);
-		return -1;
-	}
-
-	if(fcntl(api_io_socket, F_SETFL, O_NONBLOCK) == -1) {
-		output("Couldn't set API IO socket to nonblocking: %s\n", strerror(errno));
-		close(api_io_socket);
-		return -1;
-	}
-
-	if (pthread_create(&api_io_thread, NULL, &api_io_processing_loop, radio_addr) != 0) {
-		output("Cannot create API IO thread: %s\n", strerror(errno));
-		return -1;
-	}
-
-	sem_init(&response_queue_sem, 0, 0);
+    while(line = evbuffer_readln(input_buffer, NULL, EVBUFFER_EOL_ANY)) {
+        process_api_line(api, line);
+        free(line);
+    }
 }
 
-void api_io_stop()
+static void api_event_cb(struct bufferevent *bev, short what, void *ctx)
 {
-    api_io_abort = true;
-    pthread_join(api_io_thread, NULL);
-    close(api_io_socket);
-    destroy_response_queue();
+    struct api *api = (struct api *) ctx;
+    switch(what) {
+        case BEV_EVENT_CONNECTED:
+            output("Waveform has connected to the radio\n");
+            api_init(api);
+            break;
+        case BEV_EVENT_ERROR:
+            output("Waveform failed to connect to the radio\n");
+            api_io_free(api);
+            break;
+        case BEV_EVENT_TIMEOUT:
+            output("Waveform timed out connecting to the radio\n");
+            api_io_free(api);
+            break;
+        default:
+            output("Unknown socket event\n");
+            break;
+    }
 }
 
-unsigned int send_api_command(char *command, ...)
+struct api *api_io_new(struct sockaddr_in *radio_addr, struct event_base *base)
 {
-    ssize_t bytes_written;
+    struct api *api = (struct api *) malloc(sizeof(struct api));
+    if (api == NULL) {
+        output("Couldn't allocate memory for io structure\n");
+        return NULL;
+    }
+    api->rq_head = NULL;
+    api->sequence = 0;
+
+    api->bev = bufferevent_socket_new(base, -1, BEV_OPT_CLOSE_ON_FREE);
+    bufferevent_setcb(api->bev, api_read_cb, NULL, api_event_cb, api);
+    bufferevent_enable(api->bev, EV_READ|EV_WRITE);
+
+    if (bufferevent_socket_connect(api->bev, (struct sockaddr *) radio_addr, sizeof(struct sockaddr_in)) < 0) {
+        bufferevent_free(api->bev);
+        output("Could not connect to radio: %s\n", strerror(errno));
+        return NULL;
+    }
+
+	return api;
+}
+
+struct event_base *api_io_get_base(struct api *api)
+{
+   return bufferevent_get_base(api->bev);
+}
+
+unsigned int send_api_command(struct api *api, response_cb cb, void *ctx, char *command, ...)
+{
     int cmdlen = 0;
     va_list ap;
-    char message[MAX_API_COMMAND_SIZE];
     char message_format[MAX_API_COMMAND_SIZE + 4];
+    struct evbuffer *output = bufferevent_get_output(api->bev);
 
-	snprintf(message_format, MAX_API_COMMAND_SIZE, "C%d|%s\n", api_cmd_sequence++, command);
+	cmdlen = snprintf(message_format, MAX_API_COMMAND_SIZE, "C%d|%s\n", api->sequence, command);
 	if (cmdlen < 0)
 	    return -1;
 
 	va_start(ap, command);
-	cmdlen = vsnprintf(message, sizeof(message), message_format, ap);
+    evbuffer_add_vprintf(output, message_format, ap);
 	va_end(ap);
 
-	output("Sending: %s", message);
+	if (cb)
+	    add_sequence_to_response_queue(api, cb, ctx);
 
-    bytes_written = write(api_io_socket, message, (size_t) cmdlen);
-    if (bytes_written == -1) {
-    	output("Error writing to TCP API socket: %s\n", strerror(errno));
-    	return -1;
-    } else if (bytes_written != cmdlen) {
-        output("Short write to TCP API socket\n");
-        return -1;
-    }
-
-    return api_cmd_sequence - 1;
+    return ++api->sequence;
 }
 
-unsigned int send_api_command_and_wait(char *command, char **response_message, ...)
-{
-	unsigned int code, sequence;
-	struct response_queue_entry *response;
-	va_list ap;
-
-	va_start(ap, response_message);
-	if ((sequence = send_api_command(command, ap)) == -1)
-		return sequence;
-	va_end(ap);
-
-	add_sequence_to_response_queue(sequence);
-
-	// XXX We may want to do some sort of timeout here to make sure that
-	// XXX things don't hang up.
-	while((response = pop_response_with_sequence(sequence)) == NULL)
-		sem_wait(&response_queue_sem);
-
-	if (response_message)
-		*response_message = response->message;
-	code = response->code;
-	free(response);
-
-	return code;
-}
-
-int get_radio_addr(struct sockaddr_in *addr)
+int get_radio_addr(struct api *api, struct sockaddr_in *addr)
 {
 	socklen_t addr_len = sizeof(struct sockaddr_in);
 
-	return getpeername(api_io_socket, (struct sockaddr *) addr, &addr_len);
+	return getpeername(bufferevent_getfd(api->bev), (struct sockaddr *) addr, &addr_len);
 }

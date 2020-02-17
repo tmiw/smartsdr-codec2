@@ -27,11 +27,17 @@
 #define API_IO_H
 
 #include <netinet/in.h>
+#include "event2/event.h"
 
-int api_io_init(struct sockaddr_in *radio_addr);
-int wait_for_api_io();
-unsigned int send_api_command(char *command, ...);
-unsigned int send_api_command_and_wait(char *command, char **response_message, ...);
-int get_radio_addr(struct sockaddr_in *addr);
-void api_io_stop();
+struct api;
+typedef void(*response_cb) (struct api *api, void *ctx, unsigned int code, char *message);
+
+struct api *api_io_new(struct sockaddr_in *radio_addr, struct event_base *base);
+void api_io_free(struct api *api);
+struct event_base *api_io_get_base(struct api *api);
+unsigned int send_api_command(struct api *api, response_cb cb, void *ctx, char *command, ...);
+int get_radio_addr(struct api *api, struct sockaddr_in *addr);
+
+#define send_api_command_simple(api, format, ...) send_api_command(api, NULL, NULL, format, ##__VA_ARGS__)
+
 #endif // API_IO_H_

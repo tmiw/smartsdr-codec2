@@ -23,28 +23,35 @@
  *
  */
 
-#ifndef SCHED_WAVEFORM_H_
-#define SCHED_WAVEFORM_H_
+#ifndef FDV_H_
+#define FDV_H_
 
 //  To import the constants to feed to fdv_set_mode
 #include "freedv_api.h"
+#include "vita-io.h"
 #include "api.h"
+
+#include "event2/buffer.h"
 
 extern struct meter_def meter_table[];
 
-typedef struct freedv_proc_t *freedv_proc_t;
+struct fdv;
 enum freedv_xmit_state { READY, PTT_REQUESTED, TRANSMITTING, RECEIVE, UNKEY_REQUESTED };
 
-freedv_proc_t freedv_init(int mode);
-void fdv_set_mode(freedv_proc_t params, int mode);
-void freedv_queue_samples(freedv_proc_t params, int tx, size_t len, uint32_t *samples);
-void freedv_destroy(freedv_proc_t params);
-int freedv_proc_get_mode(freedv_proc_t params);
-void freedv_set_xmit_state(freedv_proc_t params, enum freedv_xmit_state state);
-void freedv_set_squelch_level(freedv_proc_t params, float squelch);
-void freedv_set_squelch_status(freedv_proc_t params, int status);
-float freedv_proc_get_squelch_level(freedv_proc_t params);
-int freedv_proc_get_squelch_status(freedv_proc_t params);
+//freedv_proc_t freedv_init(int mode);
+//void fdv_set_mode(freedv_proc_t params, int mode);
+//void freedv_queue_samples(freedv_proc_t params, int tx, size_t len, uint32_t *samples);
+//void freedv_destroy(freedv_proc_t params);
+//int freedv_proc_get_mode(freedv_proc_t params);
+//void freedv_set_xmit_state(freedv_proc_t params, enum freedv_xmit_state state);
+//void freedv_set_squelch_level(freedv_proc_t params, float squelch);
+//void freedv_set_squelch_status(freedv_proc_t params, int status);
+//float freedv_proc_get_squelch_level(freedv_proc_t params);
+//int freedv_proc_get_squelch_status(freedv_proc_t params);
 
+struct evbuffer *fdv_get_rx(struct fdv *fdv);
+struct evbuffer *fdv_get_tx(struct fdv *fdv);
+struct fdv *fdv_new(struct vita *vita, int mode);
+void fdv_free(struct fdv *);
 
-#endif /* SCHED_WAVEFORM_H_ */
+#endif /* FDV_H_ */

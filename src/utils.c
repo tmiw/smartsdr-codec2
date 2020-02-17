@@ -139,7 +139,7 @@ short float_to_fixed(double input, unsigned char fractional_bits)
     return (short)(round(input * (1u << fractional_bits)));
 }
 
-int dispatch_from_table(char *message, const struct dispatch_entry *dispatch_table)
+int dispatch_from_table(void *ctx, char *message, const struct dispatch_entry *dispatch_table)
 {
     char *argv[MAX_ARGS];
     int argc;
@@ -155,7 +155,7 @@ int dispatch_from_table(char *message, const struct dispatch_entry *dispatch_tab
     for (i = 0; strlen(dispatch_table[i].name) > 0; ++i) {
         if (strncmp(dispatch_table[i].name, argv[0], 256) == 0) {
             assert(dispatch_table[i].handler != NULL);
-            return (dispatch_table[i].handler)(argv, argc);
+            return (dispatch_table[i].handler)(ctx, argv, argc);
         }
     }
 

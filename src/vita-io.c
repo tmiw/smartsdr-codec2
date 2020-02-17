@@ -34,40 +34,51 @@
 #include <time.h>
 #include <pthread.h>
 
+#include "event2/event.h"
+#include "event2/buffer.h"
+
 #include "utils.h"
 #include "vita.h"
 #include "freedv-processor.h"
 #include "api-io.h"
 
-static int vita_sock;
-static bool vita_processing_thread_abort = true;
-static pthread_t vita_processing_thread;
-static uint8_t meter_sequence = 0;
+struct vita {
+    struct event *evt;
+    short port;
+    uint32_t rx_stream_id;
+    uint32_t tx_stream_id;
+    uint8_t meter_sequence;
+    uint32_t audio_sequence;
+    struct fdv *fdv;
+};
 
-static freedv_proc_t freedv_params;
-
-static uint32_t rx_stream_id, tx_stream_id;
-
-static void vita_process_waveform_packet(struct vita_packet *packet, ssize_t length)
+static void vita_process_waveform_packet(struct vita *vita, struct vita_packet *packet, ssize_t length)
 {
 	unsigned long payload_length = ((htons(packet->length) * sizeof(uint32_t)) - VITA_PACKET_HEADER_SIZE);
+	unsigned int num_samples = payload_length / sizeof(uint32_t);
+    uint32_t *samples = packet->if_samples;
+
 	if(payload_length != length - VITA_PACKET_HEADER_SIZE) {
 		output("VITA header size doesn't match bytes read from network (%d != %d - %d) -- %d\n", payload_length, length, VITA_PACKET_HEADER_SIZE, sizeof(struct vita_packet));
 		return;
 	}
 
+    for (unsigned int i = 0; i < num_samples / 2; ++i)
+        samples[i] = ntohl(samples[i * 2]);
+
 	if (!(htonl(packet->stream_id) & 0x0001u)) {
 	    //  Receive Packet Processing
-	    rx_stream_id = packet->stream_id;
-        freedv_queue_samples(freedv_params, 0, payload_length, packet->if_samples);
+	    vita->rx_stream_id = packet->stream_id;
+        evbuffer_add(fdv_get_rx(vita->fdv), samples, (num_samples / 2) * sizeof(uint32_t));
 	} else {
 	    //  Transmit packet processing
-        tx_stream_id = packet->stream_id;
-        freedv_queue_samples(freedv_params, 1, payload_length, packet->if_samples);
+        vita->tx_stream_id = packet->stream_id;
+        output("Queue samples for TX\n");
+        evbuffer_add(fdv_get_tx(vita->fdv), samples, (num_samples / 2) * sizeof(uint32_t));
 	}
 }
 
-static void vita_parse_packet(struct vita_packet *packet, size_t packet_len)
+static void vita_parse_packet(struct vita *vita, struct vita_packet *packet, size_t packet_len)
 {
 	// make sure packet is long enough to inspect for VITA header info
 	if (packet_len < VITA_PACKET_HEADER_SIZE)
@@ -78,7 +89,7 @@ static void vita_parse_packet(struct vita_packet *packet, size_t packet_len)
 
 	switch(packet->stream_id & STREAM_BITS_MASK) {
 		case STREAM_BITS_WAVEFORM | STREAM_BITS_IN:
-            vita_process_waveform_packet(packet, packet_len);
+            vita_process_waveform_packet(vita, packet, packet_len);
 			break;
 		default:
 			output("Undefined stream in %08X", htonl(packet->stream_id));
@@ -86,48 +97,38 @@ static void vita_parse_packet(struct vita_packet *packet, size_t packet_len)
 	}
 }
 
-static void* vita_processing_loop()
+static void vita_read_cb(evutil_socket_t socket, short what, void *ctx)
 {
-	struct vita_packet packet;
-	int ret;
-	ssize_t bytes_received = 0;
+    struct vita *vita = (struct vita *) ctx;
+    ssize_t bytes_received = 0;
+    struct vita_packet packet;
 
-	struct pollfd fds = {
-		.fd = vita_sock,
-		.events = POLLIN,
-		.revents = 0,
-	};
 
-	output("Beginning VITA Listener Loop...\n");
-    vita_processing_thread_abort = false;
 
-	while(!vita_processing_thread_abort) {
-		ret = poll(&fds, 1, 500);
+    if (!(what & EV_READ)) {
+        output("Callback is not for a read?!\n");
+        return;
+    }
 
-		if (ret == 0) {
-			// timeout
-			continue;
-		} else if (ret == -1) {
-			// error
-			output("VITA poll failed: %s\n", strerror(errno));
-			continue;
-		}
+    if ((bytes_received = recv(socket, &packet, sizeof(packet), 0)) == -1) {
+        output("VITA read failed: %s\n", strerror(errno));
+        return;
+    }
 
-		if ((bytes_received = recv(vita_sock, &packet, sizeof(packet), 0)) == -1) {
-			output("VITA read failed: %s\n", strerror(errno));
-			continue;
-		}
-
-        vita_parse_packet(&packet, bytes_received);
-	}
-
-	output("Ending VITA Listener Loop...\n");
-	return NULL;
+    vita_parse_packet(vita, &packet, bytes_received);
 }
 
-unsigned short vita_init(freedv_proc_t params)
+struct vita *vita_new(struct event_base *base, struct sockaddr_in *radio_addr)
 {
-    freedv_params = params;
+    int vita_sock;
+    struct vita *vita;
+
+    vita = (struct vita *) malloc(sizeof(struct vita));
+    if (!vita) {
+        output("Couldn't allocate space for VITA info structure");
+        return NULL;
+    }
+
 	struct sockaddr_in bind_addr =  {
 		.sin_family = AF_INET,
 		.sin_addr.s_addr = htonl(INADDR_ANY),
@@ -135,66 +136,69 @@ unsigned short vita_init(freedv_proc_t params)
 	};
 	socklen_t bind_addr_len = sizeof(bind_addr);
 
-	struct sockaddr_in radio_addr;
-	if (get_radio_addr(&radio_addr) == -1) {
-		output("Failed to get radio address: %s\n", strerror(errno));
-		return 0;
-	}
-	radio_addr.sin_port = htons(4993);
+    radio_addr->sin_port = htons(4993);
 
 	output("Initializing VITA-49 engine...\n");
 
 	vita_sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
 	if (vita_sock == -1) {
 		output(" Failed to initialize VITA socket: %s\n", strerror(errno));
-		return 0;
+		goto fail;
 	}
 
 	if(bind(vita_sock, (struct sockaddr *)&bind_addr, sizeof(bind_addr))) {
 		output("error binding socket: %s\n",strerror(errno));
-		close(vita_sock);
-		return 0;
+		goto fail_socket;
 	}
 
-	if(connect(vita_sock, (struct sockaddr *) &radio_addr, sizeof(struct sockaddr_in)) == -1) {
+	if(connect(vita_sock, (struct sockaddr *) radio_addr, sizeof(struct sockaddr_in)) == -1) {
 		output("Couldn't connect socket: %s\n", strerror(errno));
-		close(vita_sock);
-		return 0;
+		goto fail_socket;
 	}
 
 	if (getsockname(vita_sock, (struct sockaddr *) &bind_addr, &bind_addr_len) == -1) {
 		output("Couldn't get port number of VITA socket\n");
-		close(vita_sock);
-		return 0;
+        goto fail_socket;
 	}
 
-    vita_processing_thread = (pthread_t) NULL;
-    static const struct sched_param fifo_param = {
-            .sched_priority = 30
-    };
+	vita->evt = event_new(base, vita_sock, EV_READ|EV_PERSIST,  vita_read_cb, vita);
+	event_add(vita->evt, NULL);
 
-	pthread_create(&vita_processing_thread, NULL, &vita_processing_loop, NULL);
-    pthread_setschedparam(vita_processing_thread, SCHED_FIFO, &fifo_param);
+	vita->port = ntohs(bind_addr.sin_port);
 
+	vita->fdv = fdv_new(vita, FREEDV_MODE_1600);
 
-    return ntohs(bind_addr.sin_port);
+	vita->audio_sequence = 0;
+	vita->meter_sequence = 0;
+
+    return vita;
+
+    fail_socket:
+    close(vita_sock);
+    fail:
+    free(vita);
+    return NULL;
 }
 
-void vita_stop()
+short vita_get_port(struct vita *vita)
 {
-    if (vita_processing_thread_abort == false) {
-        vita_processing_thread_abort = true;
-        pthread_join(vita_processing_thread, NULL);
-        close(vita_sock);
-    }
-
-    if (freedv_params) {
-        freedv_destroy(freedv_params);
-        freedv_params = NULL;
-    }
+    return vita->port;
 }
 
-static void vita_send_packet(struct vita_packet *packet,  size_t payload_len)
+void vita_free(struct vita *vita)
+{
+    if (!vita)
+        return;
+
+    event_del(vita->evt);
+    close(event_get_fd(vita->evt));
+    event_free(vita->evt);
+    fdv_free(vita->fdv);
+
+    free(vita);
+}
+
+static void vita_send_packet(struct vita *vita, struct vita_packet *packet,  size_t payload_len)
 {
     ssize_t bytes_sent;
     size_t packet_len = VITA_PACKET_HEADER_SIZE + payload_len;
@@ -207,7 +211,7 @@ static void vita_send_packet(struct vita_packet *packet,  size_t payload_len)
     packet->timestamp_int = time(NULL);
     packet->timestamp_frac = 0;
 
-    if ((bytes_sent = send(vita_sock, packet, packet_len, 0)) == -1) {
+    if ((bytes_sent = send(event_get_fd(vita->evt), packet, packet_len, 0)) == -1) {
         output("Error sending vita packet: %s\n", strerror(errno));
         return;
     }
@@ -218,35 +222,34 @@ static void vita_send_packet(struct vita_packet *packet,  size_t payload_len)
     }
 }
 
-void vita_send_meter_packet(void *meters, size_t len)
+void vita_send_meter_packet(struct vita *vita, void *meters, size_t len)
 {
     struct vita_packet packet = {0};
 
     packet.packet_type = VITA_PACKET_TYPE_EXT_DATA_WITH_STREAM_ID;
     packet.stream_id = METER_STREAM_ID;
     packet.class_id = METER_CLASS_ID;
-    packet.timestamp_type = meter_sequence++;
+    packet.timestamp_type = vita->meter_sequence++;
 
     assert(len < sizeof(packet.raw_payload));
     memcpy(packet.raw_payload, meters, len);
 
-    vita_send_packet(&packet, len);
+    vita_send_packet(vita, &packet, len);
 }
-
-static uint32_t audio_sequence = 0;
-void vita_send_audio_packet(uint32_t *samples, size_t len, unsigned int tx)
+//
+void vita_send_audio_packet(struct vita *vita, uint32_t *samples, size_t len, unsigned int tx)
 {
     struct vita_packet packet = {0};
 
     assert(len * 2 <= sizeof(packet.if_samples));
 
     packet.packet_type = VITA_PACKET_TYPE_IF_DATA_WITH_STREAM_ID;
-    packet.stream_id = tx ? tx_stream_id : rx_stream_id;
+    packet.stream_id = tx ? vita->tx_stream_id : vita->rx_stream_id;
     packet.class_id = AUDIO_CLASS_ID;
-    packet.timestamp_type = audio_sequence++;
+    packet.timestamp_type = vita->audio_sequence++;
 
     for (unsigned int i = 0, j = 0; i < len / sizeof(uint32_t); ++i, j += 2)
         packet.if_samples[j] = packet.if_samples[j + 1] = htonl(samples[i]);
 
-    vita_send_packet(&packet, len * 2);
+    vita_send_packet(vita, &packet, len * 2);
 }

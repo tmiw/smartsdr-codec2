@@ -20,17 +20,22 @@
  * You should have received a copy of the GNU General Public License
  * along with smartsdr-codec2.  If not, see <https://www.gnu.org/licenses/>.
  *
- */#ifndef VITA_OUTPUT_H_
-#define VITA_OUTPUT_H_
+ */
+#ifndef VITA_IO_H_
+#define VITA_IO_H_
 
+#include "event2/event.h"
+
+struct vita;
 #include "freedv-processor.h"
 
 void vita_output_Init(const char * ip );
 void hal_Listener_Init(void);
-void vita_send_audio_packet(uint32_t *samples, size_t len, unsigned int tx);
-unsigned short vita_init(freedv_proc_t params);
-void vita_stop();
-void vita_send_meter_packet(void *meters, size_t len);
+void vita_send_audio_packet(struct vita *vita, uint32_t *samples, size_t len, unsigned int tx);
+struct vita *vita_new(struct event_base *base, struct sockaddr_in *radio_addr);
+void vita_free(struct vita *vita);
+short vita_get_port(struct vita *vita);
+void vita_send_meter_packet(struct vita *vita, void *meters, size_t len);
 
 
 #define HAL_RX_BUFFER_SIZE	128
@@ -90,4 +95,4 @@ typedef enum STREAM_TYPEX ShortStreamType;
 #endif
 
 
-#endif /* VITA_OUTPUT_H_ */
+#endif /* VITA_IO_H_ */

@@ -25,6 +25,7 @@
 #define API_H
 
 #include "freedv_api.h"
+#include "api-io.h"
 
 typedef short (*meter_value_t)(struct freedv *, struct MODEM_STATS *);
 
@@ -37,9 +38,11 @@ struct meter_def {
 	meter_value_t set_func;
 };
 
-int process_status_message(char *message);
+int process_status_message(struct api *api, char *message);
 int process_waveform_command(unsigned int sequence, char *message);
-int register_meters(struct meter_def *meters);
+int register_meters(struct api *api, struct meter_def *meters);
 int find_meter_by_name(struct meter_def *meters, char *name);
+void api_init(struct api *api);
+void api_close(struct api *api);
 
 #endif // API_H_

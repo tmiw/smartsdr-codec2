@@ -28,7 +28,7 @@
 
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
 
-typedef int (*dispatch_handler_t)(char **, int);
+typedef int (*dispatch_handler_t)(void *, char **, int);
 
 struct dispatch_entry {
     char name[256];
@@ -38,7 +38,7 @@ struct dispatch_entry {
 void output(const char *fmt,...);
 int parse_argv(char *string, char **argv, int max_args);
 short float_to_fixed(double input, unsigned char fractional_bits);
-int dispatch_from_table(char *message, const struct dispatch_entry *dispatch_table);
+int dispatch_from_table(void *ctx, char *message, const struct dispatch_entry *dispatch_table);
 struct kwarg *parse_kwargs(char **argv, int argc, int start);
 char *find_kwarg(struct kwarg *args, char *key);
 void kwargs_destroy(struct kwarg **args);
