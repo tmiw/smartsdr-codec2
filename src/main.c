@@ -24,19 +24,15 @@
  */
 
 #include <stdlib.h>
-#include <stdio.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <signal.h>
-#include <errno.h>
-#include <poll.h>
 #include <pthread.h>
 #include <sched.h>
 
 #include "event2/event.h"
 #include "event2/bufferevent.h"
-#include "event2/buffer.h"
 
 #include "discovery.h"
 #include "api-io.h"
@@ -105,6 +101,3 @@ int main(int argc, char **argv)
     output("FreeDV Waveform Stopped.\n");
     exit(0);
 }
-
-
-
