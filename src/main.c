@@ -60,7 +60,8 @@ int main(int argc, char **argv)
 	pthread_t this_thread = pthread_self();
 	struct sched_param thread_param;
 	int ret;
-	struct event *terminate;
+	struct event *sigint_event;
+	struct event *sigterm_event;
 
 	output("SmartSDR FreeDV Waveform v%s (%s)\n", version, GIT_REV);
 	// XXX TODO: Loop around discovery/initiate?
@@ -88,11 +89,10 @@ int main(int argc, char **argv)
         exit(0);
     }
 
-	// TODO: This should have a reference to the api loop passed so that we
-	//       can shut things down correctly.  We also probably need to send in
-	//       the base as well.
-    terminate = evsignal_new(base, SIGINT, signal_cb, base);
-    event_add(terminate, NULL);
+    sigint_event = evsignal_new(base, SIGINT, signal_cb, base);
+    sigterm_event = evsignal_new(base, SIGTERM, signal_cb, base);
+    event_add(sigint_event, NULL);
+    event_add(sigterm_event, NULL);
 
     event_base_dispatch(base);
 
