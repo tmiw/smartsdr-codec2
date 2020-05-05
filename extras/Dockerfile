@@ -34,4 +34,4 @@ RUN cd toolchain && \
     ct-ng build.4 && \
     cd .. && \
     rm -rf toolchain
-ENV PATH=${CT_PREFIX}/arm-linux-gnueabi/bin:$PATH
+ENV PATH=${CT_PREFIX}/flex6k/bin:$PATH
