@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.0)
 include(ExternalProject)
+include(FetchContent)
 
 set(CMAKE_CONFIGURATION_TYPES "ARMRelease;ARMDebug" CACHE STRING "" FORCE)
 
@@ -45,27 +46,27 @@ set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build shared library.  Set to OFF for stat
 set(CMAKE_FIND_LIBRARY_SUFFIXES ".a")
 
 #  CODEC2 library
-ExternalProject_Add(codec2
-        PREFIX codec2
-#        GIT_REPOSITORY https://github.com/drowe67/codec2.git
-#        GIT_TAG c515387982bbe9f0ea9d6d0f50884716c0b1c6c4
-        GIT_REPOSITORY https://github.com/mcdermj/codec2.git
-        GIT_SHALLOW OFF
-        GIT_PROGRESS OFF
-        EXCLUDE_FROM_ALL ON
-        BUILD_COMMAND cmake --build . --target codec2
-        INSTALL_COMMAND ""
-        CMAKE_CACHE_ARGS
-          -DCMAKE_C_FLAGS:STRING=${CMAKE_C_FLAGS_${BUILD_TYPE_UC}}
-          -DBUILD_SHARED_LIBS:BOOL=OFF
-          -DUNITTEST:BOOL=OFF
-          -DINSTALL_EXAMPLES:BOOL=OFF
-          -DLPCNET:BOOL=OFF
-          -DCMAKE_BUILD_TYPE:STRING=${UNDERLYING_BUILD_TYPE}
-          -DCMAKE_TOOLCHAIN_FILE:STRING=${CMAKE_TOOLCHAIN_FILE})
-ExternalProject_Get_Property(codec2 BINARY_DIR SOURCE_DIR)
-set(CODEC2_INCLUDE_DIR ${SOURCE_DIR}/src)
-set(CODEC2_LIB_PATH ${BINARY_DIR}/src/${CMAKE_STATIC_LIBRARY_PREFIX}codec2${CMAKE_STATIC_LIBRARY_SUFFIX})
+#ExternalProject_Add(codec2
+#        PREFIX codec2
+##        GIT_REPOSITORY https://github.com/drowe67/codec2.git
+#        GIT_REPOSITORY https://github.com/mcdermj/codec2.git
+#        GIT_TAG origin/embedded-fixes
+#        GIT_SHALLOW OFF
+#        GIT_PROGRESS OFF
+#        EXCLUDE_FROM_ALL ON
+#        BUILD_COMMAND cmake --build . --target codec2
+#        INSTALL_COMMAND ""
+#        CMAKE_CACHE_ARGS
+#          -DCMAKE_C_FLAGS:STRING=${CMAKE_C_FLAGS_${BUILD_TYPE_UC}}
+#          -DBUILD_SHARED_LIBS:BOOL=OFF
+#          -DUNITTEST:BOOL=OFF
+#          -DINSTALL_EXAMPLES:BOOL=OFF
+#          -DLPCNET:BOOL=OFF
+#          -DCMAKE_BUILD_TYPE:STRING=${UNDERLYING_BUILD_TYPE}
+#          -DCMAKE_TOOLCHAIN_FILE:STRING=${CMAKE_TOOLCHAIN_FILE})
+#ExternalProject_Get_Property(codec2 BINARY_DIR SOURCE_DIR)
+#set(CODEC2_INCLUDE_DIR ${SOURCE_DIR}/src)
+#set(CODEC2_LIB_PATH ${BINARY_DIR}/src/${CMAKE_STATIC_LIBRARY_PREFIX}codec2${CMAKE_STATIC_LIBRARY_SUFFIX})
 
 #  SOXR resampling library
 ExternalProject_Add(soxr
@@ -87,14 +88,51 @@ ExternalProject_Get_Property(soxr BINARY_DIR SOURCE_DIR)
 set(SOXR_INCLUDE_DIR ${SOURCE_DIR}/src)
 set(SOXR_LIB_PATH ${BINARY_DIR}/src/${CMAKE_STATIC_LIBRARY_PREFIX}soxr${CMAKE_STATIC_LIBRARY_SUFFIX})
 
+
+#  This is conditional on ARM architecture!
+FetchContent_Declare(CMSIS
+        GIT_REPOSITORY https://github.com/ARM-software/CMSIS_5.git
+        GIT_SHALLOW ON
+        GIT_PROGRESS ON
+        GIT_TAG 5.7.0
+)
+FetchContent_GetProperties(cmsis)
+if(NOT ${cmsis_POPULATED})
+  FetchContent_Populate(CMSIS)
+endif()
+
+set(ROOT ${cmsis_SOURCE_DIR})
+set(DSP ${cmsis_SOURCE_DIR}/CMSIS/DSP)
+set(ARM_CPU "cortex-a8")
+include(${cmsis_SOURCE_DIR}/CMSIS/DSP/Toolchain/GCC.cmake)
+# Add DSP folder to module path
+list(APPEND CMAKE_MODULE_PATH ${cmsis_SOURCE_DIR}/CMSIS/DSP ${cmsis_SOURCE_DIR}/CMSIS/DSP/Source)
+
+message("Adding ${cmsis_SOURCE_DIR}/CMSIS/DSP/Source")
+include_directories(AFTER ${cmsis_SOURCE_DIR}/CMSIS/Core/Include)
+add_subdirectory(${cmsis_SOURCE_DIR}/CMSIS/DSP/Source ${cmsis_BINARY_DIR} EXCLUDE_FROM_ALL)
+
+FetchContent_Declare(codec2
+  GIT_REPOSITORY https://github.com/mcdermj/codec2.git
+  GIT_TAG origin/embedded-fixes
+  GIT_SHALLOW OFF
+  GIT_PROGRESS OFF
+)
+FetchContent_GetProperties(codec2)
+if(NOT ${codec2_POPULATED})
+  FetchContent_Populate(codec2)
+endif()
+
 #  Our code
 add_subdirectory(src)
-target_include_directories(waveform PRIVATE ${CODEC2_INCLUDE_DIR} ${SOXR_INCLUDE_DIR})
-add_dependencies(waveform codec2 soxr)
+target_include_directories(waveform PUBLIC ${codec2_SOURCE_DIR}/src ${SOXR_INCLUDE_DIR})
+add_dependencies(waveform  soxr)
+# codec2
 
 add_executable(freedv main.c)
-target_include_directories(freedv PRIVATE src ${CODEC2_INCLUDE_DIR})
-target_link_libraries(freedv waveform ${CODEC2_LIB_PATH} ${SOXR_LIB_PATH} m pthread rt)
+target_include_directories(freedv PRIVATE src ${codec2_SOURCE_DIR}/src)
+target_link_libraries(freedv waveform  ${SOXR_LIB_PATH} CMSISDSP m pthread rt)
+# ${CODEC2_LIB_PATH}
 
 add_custom_target(create_zip
         DEPENDS zipdir
