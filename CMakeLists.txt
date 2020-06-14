@@ -12,8 +12,8 @@ set(CMAKE_EXE_LINKER_FLAGS ${CMAKE_EXE_LINKER_FLAGS} -static)
 
 set(CMAKE_C_FLAGS_RELEASE "-Ofast -pg")
 set(CMAKE_C_FLAGS_DEBUG "-g -Og -pg")
-set(CMAKE_C_FLAGS_ARMRELEASE "-O2 -mfpu=neon -mcpu=cortex-a8")
-set(CMAKE_C_FLAGS_ARMDEBUG "-g -Og -pg -mfpu=neon -mcpu=cortex-a8")
+set(CMAKE_C_FLAGS_ARMRELEASE "-Ofast -mfpu=neon -mcpu=cortex-a8 -D__EMBEDDED__ -DFREEDV_MODE_EN_DEFAULT=0 -DFREEDV_MODE_1600_EN=1 -DFREEDV_MODE_700D_EN=1 -DCODEC2_MODE_EN_DEFAULT=0 -DCODEC2_MODE_1300_EN=1 -DCODEC2_MODE_700C_EN=1")
+set(CMAKE_C_FLAGS_ARMDEBUG "-g -Og -pg -mfpu=neon -mcpu=cortex-a8 -D__EMBEDDED__ -DFREEDV_MODE_EN_DEFAULT=0 -DFREEDV_MODE_1600_EN=1 -DFREEDV_MODE_700D_EN=1 -DCODEC2_MODE_EN_DEFAULT=0 -DCODEC2_MODE_1300_EN=1 -DCODEC2_MODE_700C_EN=1")
 
 string(TOUPPER ${CMAKE_BUILD_TYPE} BUILD_TYPE_UC)
 
@@ -114,7 +114,7 @@ add_subdirectory(${cmsis_SOURCE_DIR}/CMSIS/DSP/Source ${cmsis_BINARY_DIR} EXCLUD
 
 FetchContent_Declare(codec2
   GIT_REPOSITORY https://github.com/mcdermj/codec2.git
-  GIT_TAG origin/embedded-fixes
+  GIT_TAG origin/nh6z-embedded-fixes
   GIT_SHALLOW OFF
   GIT_PROGRESS OFF
 )
@@ -122,6 +122,10 @@ FetchContent_GetProperties(codec2)
 if(NOT ${codec2_POPULATED})
   FetchContent_Populate(codec2)
 endif()
+
+set(LPCNET OFF CACHE BOOL "")
+add_subdirectory(${codec2_SOURCE_DIR} ${codec2_BINARY_DIR} EXCLUDE_FROM_ALL)
+
 
 #  Our code
 add_subdirectory(src)
@@ -131,7 +135,7 @@ add_dependencies(waveform  soxr)
 
 add_executable(freedv main.c)
 target_include_directories(freedv PRIVATE src ${codec2_SOURCE_DIR}/src)
-target_link_libraries(freedv waveform  ${SOXR_LIB_PATH} CMSISDSP m pthread rt)
+target_link_libraries(freedv waveform  ${SOXR_LIB_PATH} CMSISDSP codec2 m pthread rt)
 # ${CODEC2_LIB_PATH}
 
 add_custom_target(create_zip
