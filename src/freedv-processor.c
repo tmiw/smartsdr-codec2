@@ -304,7 +304,7 @@ static void *_sched_waveform_thread(void *arg)
 
                     soxr_process (rx_upsampler,
                                   speech_out, nout, NULL,
-                                  resample_buffer, radio_samples, &odone);
+                                  resample_buffer, nout * SAMPLE_RATE_RATIO, &odone);
 
                     ringbuf_memcpy_into(rx_output_buffer, resample_buffer, odone * sizeof(float));
                 }
