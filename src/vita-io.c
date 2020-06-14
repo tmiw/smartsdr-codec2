@@ -33,6 +33,7 @@
 #include <poll.h>
 #include <time.h>
 #include <pthread.h>
+#include <stdbool.h>
 
 #include "utils.h"
 #include "vita.h"
