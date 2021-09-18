@@ -50,6 +50,7 @@ struct mode_entry {
 static const struct mode_entry mode_table[] = {
         { FREEDV_MODE_700C,     "700C",     250,    2750, 1500 },
         { FREEDV_MODE_700D,     "700D",     250,    2750, 1500 },
+        { FREEDV_MODE_700E,     "700E",     250,    2750, 1500 },
         { FREEDV_MODE_800XA,    "800XA",    250,    2750, 1500 },
         { FREEDV_MODE_1600,     "1600",     250,    2750, 1500 }
 };
