@@ -267,8 +267,10 @@ static void *_sched_waveform_thread(void *arg)
 			output("Couldn't get time.\n");
 			continue;
 		}
-		//  TODO:  Probably decrease this timeout.  We should be getting packets every sr / packet_size seconds.
-		timeout.tv_sec += 1;
+
+		long nanoseconds = 1000000000 / PACKET_SAMPLES * SAMPLE_RATE_RATIO;
+		timeout.tv_nsec = (timeout.tv_nsec + nanoseconds) % 1000000000;
+		timeout.tv_sec += (timeout.tv_nsec + nanoseconds) / 1000000000;
 
 		while((ret = sem_timedwait(&params->input_sem, &timeout)) == -1 && errno == EINTR);
 
