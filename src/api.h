@@ -41,5 +41,7 @@ int process_status_message(char *message);
 int process_waveform_command(unsigned int sequence, char *message);
 int register_meters(struct meter_def *meters);
 int find_meter_by_name(struct meter_def *meters, char *name);
+int register_waveforms();
+int deregister_waveforms();
 
 #endif // API_H_

@@ -69,24 +69,16 @@ int main(int argc, char **argv)
 	send_api_command("sub slice all");
     if (meter_table[0].id == 0)
         register_meters(meter_table);
-
-	//  TODO: These commands should be encapsulated in freedv handling code in
-	//        separate file.
-	send_api_command("waveform create name=FreeDV-USB mode=FDVU underlying_mode=USB version=2.0.0");
-	send_api_command("waveform set FreeDV-USB tx=1");
-    send_api_command("waveform set FreeDV-USB rx_filter depth=8");
-    send_api_command("waveform set FreeDV-USB tx_filter depth=8");
-
-	send_api_command("waveform create name=FreeDV-LSB mode=FDVL underlying_mode=LSB version=2.0.0");
-	send_api_command("waveform set FreeDV-LSB tx=1");
-    send_api_command("waveform set FreeDV-LSB rx_filter depth=8");
-    send_api_command("waveform set FreeDV-LSB tx_filter depth=8");
+    
+    register_waveforms();
 
     sigprocmask(SIG_BLOCK, &stop_sigs, NULL);
     while (sigwaitinfo(&stop_sigs, NULL) < 0 && errno == EINTR);
 
     output("Program stop requested.  Shutting Down\n");
-    send_api_command("waveform remove FreeDV-USB");
+
+    deregister_waveforms();
+
     vita_stop();
     api_io_stop();
 	output("FreeDV Waveform Stopped.\n");
