@@ -439,6 +439,7 @@ void fdv_set_mode(freedv_proc_t params, int mode)
     freedv_close(params->fdv);
     params->fdv = fdv_open(mode);
 
+    freedv_send_meters(params->fdv);
     freedv_resize_ringbuf(&params->rx_input_buffer, freedv_get_n_max_modem_samples(params->fdv));
     freedv_resize_ringbuf(&params->tx_input_buffer, freedv_get_n_speech_samples(params->fdv));
 
@@ -453,6 +454,7 @@ freedv_proc_t freedv_init(int mode)
     params->xmit_state = READY;
 
     params->fdv = fdv_open(mode);
+    freedv_send_meters(params->fdv);
 
     size_t rx_ringbuffer_size = freedv_get_n_max_modem_samples(params->fdv) * sizeof(float) * 10;
     size_t tx_ringbuffer_size = freedv_get_n_speech_samples(params->fdv) * sizeof(float) * 10;
