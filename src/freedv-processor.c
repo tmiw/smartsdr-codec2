@@ -416,6 +416,12 @@ static struct freedv *fdv_open(int mode)
 
     assert(fdv != NULL);
 
+    if (mode == FREEDV_MODE_700D || mode == FREEDV_MODE_700E)
+    {
+        freedv_set_clip(fdv, 1);
+        freedv_set_tx_bpf(fdv, 1);
+    }
+
     return fdv;
 }
 

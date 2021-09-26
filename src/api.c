@@ -48,11 +48,11 @@ struct mode_entry {
 };
 
 static const struct mode_entry mode_table[] = {
-        { FREEDV_MODE_700C,     "700C",     250,    2750, 1500 },
-        { FREEDV_MODE_700D,     "700D",     250,    2750, 1500 },
-        { FREEDV_MODE_700E,     "700E",     250,    2750, 1500 },
-        { FREEDV_MODE_800XA,    "800XA",    250,    2750, 1500 },
-        { FREEDV_MODE_1600,     "1600",     250,    2750, 1500 }
+        { FREEDV_MODE_700C,     "700C",     500,    2500, 1500 },
+        { FREEDV_MODE_700D,     "700D",     500,    2500, 1500 },
+        { FREEDV_MODE_700E,     "700E",     500,    2500, 1500 },
+        { FREEDV_MODE_800XA,    "800XA",    500,    2500, 1500 },
+        { FREEDV_MODE_1600,     "1600",     500,    2500, 1500 }
 };
 
 static void set_mode_filter(int slice, const struct mode_entry *entry)
@@ -77,7 +77,7 @@ static void change_to_fdv_mode(unsigned char slice) {
 
     if (active_slice == slice || active_slice < 0) {
         for (unsigned long i = 0; i < ARRAY_SIZE(mode_table); ++i)
-            if (mode_table[i].mode == FREEDV_MODE_1600)
+            if (mode_table[i].mode == FREEDV_MODE_700D)
                 set_mode_filter(slice, &mode_table[i]);
     }
     
@@ -91,7 +91,7 @@ static void change_to_fdv_mode(unsigned char slice) {
     active_slice = slice;
 
     // Start up the processing loop
-    freedv_params = freedv_init(FREEDV_MODE_1600);
+    freedv_params = freedv_init(FREEDV_MODE_700D);
     if (freedv_params == NULL) {
         output("Could not create processing loop?");
         return;
