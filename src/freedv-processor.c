@@ -331,6 +331,12 @@ static void *_sched_waveform_thread(void *arg)
 
                     freedv_tx(params->fdv, mod_out, speech_in);
 
+                    // Make samples louder by 6dB to compensate for lower than expected power output otherwise on Flex (e.g. setting the power slider to max only gives 30-40W out on the 6300 using 700D).
+                    float scale_factor = exp(6.0f/20.0f * log(10.0f));
+                    for (int index = 0; index < tx_modem_samples; index++)
+                    {
+                        mod_out[index] *= scale_factor;
+                    }
                     soxr_process (tx_upsampler,
                                   mod_out, tx_modem_samples, NULL,
                                   resample_buffer, tx_modem_samples * SAMPLE_RATE_RATIO, &odone);
