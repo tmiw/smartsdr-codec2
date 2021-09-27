@@ -171,11 +171,11 @@ unsigned short vita_init(freedv_proc_t params)
 
     vita_processing_thread = (pthread_t) NULL;
     static const struct sched_param fifo_param = {
-            .sched_priority = 30
+            .sched_priority = 50
     };
 
 	pthread_create(&vita_processing_thread, NULL, &vita_processing_loop, NULL);
-    pthread_setschedparam(vita_processing_thread, SCHED_FIFO, &fifo_param);
+    pthread_setschedparam(vita_processing_thread, SCHED_RR, &fifo_param);
 
 
     return ntohs(bind_addr.sin_port);

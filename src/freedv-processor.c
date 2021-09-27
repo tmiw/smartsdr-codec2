@@ -375,11 +375,11 @@ static void *_sched_waveform_thread(void *arg)
 static void start_processing_thread(freedv_proc_t params)
 {
     static const struct sched_param fifo_param = {
-            .sched_priority = 30
+            .sched_priority = 50
     };
 
 	pthread_create(&params->thread, NULL, &_sched_waveform_thread, params);
-	pthread_setschedparam(params->thread, SCHED_FIFO, &fifo_param);
+	pthread_setschedparam(params->thread, SCHED_RR, &fifo_param);
 }
 
 void freedv_destroy(freedv_proc_t params)
