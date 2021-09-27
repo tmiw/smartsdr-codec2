@@ -416,7 +416,6 @@ static struct freedv *fdv_open(int mode)
 
     if ((mode == FREEDV_MODE_700D) || (mode == FREEDV_MODE_700E) || (mode == FREEDV_MODE_2020)) {
         struct freedv_advanced adv;
-        adv.interleave_frames = 1;
         fdv = freedv_open_advanced(mode, &adv);
     } else {
         fdv = freedv_open(mode);
