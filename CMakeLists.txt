@@ -110,6 +110,7 @@ list(APPEND CMAKE_MODULE_PATH ${cmsis_SOURCE_DIR}/CMSIS/DSP ${cmsis_SOURCE_DIR}/
 
 message("Adding ${cmsis_SOURCE_DIR}/CMSIS/DSP/Source")
 include_directories(AFTER ${cmsis_SOURCE_DIR}/CMSIS/Core/Include)
+include_directories(AFTER ${cmsis_SOURCE_DIR}/CMSIS/DSP/Include)
 add_subdirectory(${cmsis_SOURCE_DIR}/CMSIS/DSP/Source ${cmsis_BINARY_DIR} EXCLUDE_FROM_ALL)
 
 FetchContent_Declare(codec2
