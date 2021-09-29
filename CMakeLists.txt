@@ -90,9 +90,9 @@ set(SOXR_LIB_PATH ${BINARY_DIR}/src/${CMAKE_STATIC_LIBRARY_PREFIX}soxr${CMAKE_ST
 
 
 #  This is conditional on ARM architecture!
-if(CMAKE_SYSTEM_PROCESSOR EQUAL "arm")
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "^arm")
+message("Adding CMSIS to build.")
 FetchContent_Declare(CMSIS
-if (CMAKE_SYSTEM_PROCESSOR EQUAL "arm")
         GIT_REPOSITORY https://github.com/ARM-software/CMSIS_5.git
         GIT_SHALLOW ON
         GIT_PROGRESS ON
@@ -114,7 +114,7 @@ message("Adding ${cmsis_SOURCE_DIR}/CMSIS/DSP/Source")
 include_directories(AFTER ${cmsis_SOURCE_DIR}/CMSIS/Core/Include)
 include_directories(AFTER ${cmsis_SOURCE_DIR}/CMSIS/DSP/Include)
 add_subdirectory(${cmsis_SOURCE_DIR}/CMSIS/DSP/Source ${cmsis_BINARY_DIR} EXCLUDE_FROM_ALL)
-endif(CMAKE_SYSTEM_PROCESSOR EQUAL "arm")
+endif(CMAKE_SYSTEM_PROCESSOR MATCHES "^arm")
 
 FetchContent_Declare(codec2
   GIT_REPOSITORY https://github.com/drowe67/codec2.git
@@ -139,11 +139,11 @@ add_dependencies(waveform  soxr)
 
 add_executable(freedv main.c)
 target_include_directories(freedv PRIVATE src ${codec2_SOURCE_DIR}/src)
-if (CMAKE_SYSTEM_PROCESSOR EQUAL "arm")
+if (CMAKE_SYSTEM_PROCESSOR MATCHES "^arm")
 target_link_libraries(freedv waveform  ${SOXR_LIB_PATH} CMSISDSP codec2 m pthread rt)
-else(CMAKE_SYSTEM_PROCESSOR EQUAL "arm")
+else(CMAKE_SYSTEM_PROCESSOR MATCHES "^arm")
 target_link_libraries(freedv waveform  ${SOXR_LIB_PATH} codec2 m pthread rt)
-endif(CMAKE_SYSTEM_PROCESSOR EQUAL "arm")
+endif(CMAKE_SYSTEM_PROCESSOR MATCHES "^arm")
 # ${CODEC2_LIB_PATH}
 
 add_custom_target(create_zip
