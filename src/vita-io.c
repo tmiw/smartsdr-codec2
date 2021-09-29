@@ -109,8 +109,12 @@ static void* vita_processing_loop()
 			// timeout
 			continue;
 		} else if (ret == -1) {
-			// error
-			output("VITA poll failed: %s\n", strerror(errno));
+			if (errno != EINTR)
+			{
+				// Interrupted system call errors are fine.
+				// Anything else should print an error.
+				output("VITA poll failed: %s\n", strerror(errno));
+			}
 			continue;
 		}
 

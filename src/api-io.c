@@ -291,8 +291,11 @@ static void *api_io_processing_loop(void *arg)
 			// timeout
 			continue;
 		} else if (ret == -1) {
-			// error
-			output("Poll failed: %s\n", strerror(errno));
+			// Interrupted system calls are fine. Otherwise, print message.
+			if (errno != EINTR)
+			{
+				output("Poll failed: %s\n", strerror(errno));
+			}
 			continue;
 		}
 
