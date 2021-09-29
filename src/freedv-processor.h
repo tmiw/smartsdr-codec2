@@ -28,6 +28,7 @@
 
 //  To import the constants to feed to fdv_set_mode
 #include "freedv_api.h"
+#include "reliable_text.h"
 #include "api.h"
 
 extern struct meter_def meter_table[];
@@ -45,6 +46,6 @@ void freedv_set_squelch_level(freedv_proc_t params, float squelch);
 void freedv_set_squelch_status(freedv_proc_t params, int status);
 float freedv_proc_get_squelch_level(freedv_proc_t params);
 int freedv_proc_get_squelch_status(freedv_proc_t params);
-
+void freedv_set_callsign(freedv_proc_t params, char* callsign);
 
 #endif /* SCHED_WAVEFORM_H_ */

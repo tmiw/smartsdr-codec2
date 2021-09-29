@@ -49,6 +49,8 @@
 #define SAMPLE_RATE_RATIO (RADIO_SAMPLE_RATE / FREEDV_SAMPLE_RATE)
 #define PACKET_SAMPLES  128
 
+char freedv_callsign[10];
+
 struct freedv_proc_t {
     pthread_t thread;
     int running;
@@ -59,6 +61,8 @@ struct freedv_proc_t {
     enum freedv_xmit_state xmit_state;
     float squelch_level;
     int squelch_enabled;
+
+    reliable_text_t rt;
 
     // TODO: Meter table?
 };
@@ -212,11 +216,25 @@ void freedv_set_xmit_state(freedv_proc_t params, enum freedv_xmit_state state)
     params->xmit_state = state;
 }
 
+void freedv_set_callsign(freedv_proc_t params, char* callsign)
+{
+    output("Setting callsign to %s", callsign);
+    strncpy(freedv_callsign, callsign, 9);
+    if (params && params->fdv && params->rt)
+    {
+        reliable_text_set_string(params->rt, freedv_callsign, strlen(freedv_callsign));
+    }
+}
+
 static void freedv_processing_loop_cleanup(void *arg)
 {
     freedv_proc_t params = (freedv_proc_t) arg;
 
     sem_destroy(&params->input_sem);
+    if (params->rt)
+    {
+        reliable_text_destroy(params->rt);
+    }
     freedv_close(params->fdv);
     ringbuf_free(&params->rx_input_buffer);
     ringbuf_free(&params->tx_input_buffer);
@@ -433,6 +451,11 @@ static struct freedv *fdv_open(int mode)
     return fdv;
 }
 
+static void ReliableTextRx(reliable_text_t rt, const char* txt_ptr, int length, void* state)
+{
+    // Does nothing for now. We may want to pipe the received callsign to the companion app eventually.
+}
+
 void fdv_set_mode(freedv_proc_t params, int mode)
 {
     assert(params != NULL);
@@ -444,6 +467,15 @@ void fdv_set_mode(freedv_proc_t params, int mode)
 
     freedv_close(params->fdv);
     params->fdv = fdv_open(mode);
+    params->rt = NULL;
+
+    // Set up reliable_text.
+    if (mode != FREEDV_MODE_700C)
+    {
+        params->rt = reliable_text_create();
+        reliable_text_set_string(params->rt, freedv_callsign, strlen(freedv_callsign));
+        reliable_text_use_with_freedv(params->rt, params->fdv, &ReliableTextRx, NULL);
+    }
 
     freedv_send_meters(params->fdv);
     freedv_resize_ringbuf(&params->rx_input_buffer, freedv_get_n_max_modem_samples(params->fdv));
@@ -460,6 +492,15 @@ freedv_proc_t freedv_init(int mode)
     params->xmit_state = READY;
 
     params->fdv = fdv_open(mode);
+
+    // Set up reliable_text.
+    if (mode != FREEDV_MODE_700C)
+    {
+        params->rt = reliable_text_create();
+        reliable_text_set_string(params->rt, freedv_callsign, strlen(freedv_callsign));
+        reliable_text_use_with_freedv(params->rt, params->fdv, &ReliableTextRx, NULL);
+    }
+
     freedv_send_meters(params->fdv);
 
     size_t rx_ringbuffer_size = freedv_get_n_max_modem_samples(params->fdv) * sizeof(float) * 10;

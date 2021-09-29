@@ -121,6 +121,30 @@ static void change_from_fdv_mode(unsigned char slice)
 	active_slice = -1;
 }
 
+static int process_radio_status(char **argv, int argc)
+{
+	long slice;
+	char *value;
+	char *end;
+	struct kwarg *kwargs;
+	char *callsign;
+
+	if (argc < 2) {
+		output("Not enough arguments to radio status message (%d)\n", argc);
+		return -1;
+	}
+
+	errno = 0;
+	kwargs = parse_kwargs(argv, argc, 1);
+	if((callsign = find_kwarg(kwargs, "callsign")) != NULL) {
+		// Reset callsign 
+		freedv_set_callsign(freedv_params, callsign);
+	}
+
+	kwargs_destroy(&kwargs);
+	return 0;
+}
+
 static int process_slice_status(char **argv, int argc)
 {
 	long slice;
@@ -198,6 +222,7 @@ static int process_interlock_status(char **argv, int argc)
 
 static const struct dispatch_entry status_dispatch_table[] = {
 	{ "slice", &process_slice_status },
+	{ "radio", &process_radio_status },
     { "interlock", &process_interlock_status },
 	{ "", NULL },
 };
@@ -338,8 +363,12 @@ int find_meter_by_name(struct meter_def *meters, char *name)
     return -1;
 }
 
+extern char freedv_callsign[];
+
 int register_waveforms()
 {
+    freedv_callsign[0] = 0;
+
     send_api_command("waveform create name=FreeDV-USB mode=FDVU underlying_mode=USB version=2.0.0");
     send_api_command("waveform set FreeDV-USB tx=1");
     send_api_command("waveform set FreeDV-USB rx_filter depth=8");
