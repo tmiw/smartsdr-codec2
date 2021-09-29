@@ -363,12 +363,8 @@ int find_meter_by_name(struct meter_def *meters, char *name)
     return -1;
 }
 
-extern char freedv_callsign[];
-
 int register_waveforms()
 {
-    freedv_callsign[0] = 0;
-
     send_api_command("waveform create name=FreeDV-USB mode=FDVU underlying_mode=USB version=2.0.0");
     send_api_command("waveform set FreeDV-USB tx=1");
     send_api_command("waveform set FreeDV-USB rx_filter depth=8");

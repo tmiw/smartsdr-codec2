@@ -49,7 +49,7 @@
 #define SAMPLE_RATE_RATIO (RADIO_SAMPLE_RATE / FREEDV_SAMPLE_RATE)
 #define PACKET_SAMPLES  128
 
-char freedv_callsign[10];
+static char freedv_callsign[10];
 
 struct freedv_proc_t {
     pthread_t thread;
@@ -218,10 +218,11 @@ void freedv_set_xmit_state(freedv_proc_t params, enum freedv_xmit_state state)
 
 void freedv_set_callsign(freedv_proc_t params, char* callsign)
 {
-    output("Setting callsign to %s", callsign);
     strncpy(freedv_callsign, callsign, 9);
+    output("Setting callsign to %s\n", freedv_callsign);
     if (params && params->fdv && params->rt)
     {
+        output("Sending callsign %s to reliable_text\n", freedv_callsign);
         reliable_text_set_string(params->rt, freedv_callsign, strlen(freedv_callsign));
     }
 }
@@ -275,7 +276,7 @@ static void *_sched_waveform_thread(void *arg)
     // Clear TX string
     memset(_my_cb_state.tx_str, 0, sizeof(_my_cb_state.tx_str));
     _my_cb_state.ptx_str = _my_cb_state.tx_str;
-    freedv_set_callback_txt(params->fdv, &my_put_next_rx_char, &my_get_next_tx_char, &_my_cb_state);
+    //freedv_set_callback_txt(params->fdv, &my_put_next_rx_char, &my_get_next_tx_char, &_my_cb_state);
 
 	params->running = 1;
 	output("Starting processing thread...\n");
@@ -472,6 +473,7 @@ void fdv_set_mode(freedv_proc_t params, int mode)
     // Set up reliable_text.
     if (mode != FREEDV_MODE_700C)
     {
+        output("Enabling reliable_text using callsign %s\n", freedv_callsign);
         params->rt = reliable_text_create();
         reliable_text_set_string(params->rt, freedv_callsign, strlen(freedv_callsign));
         reliable_text_use_with_freedv(params->rt, params->fdv, &ReliableTextRx, NULL);
@@ -496,6 +498,7 @@ freedv_proc_t freedv_init(int mode)
     // Set up reliable_text.
     if (mode != FREEDV_MODE_700C)
     {
+        output("Enabling reliable_text using callsign %s\n", freedv_callsign);
         params->rt = reliable_text_create();
         reliable_text_set_string(params->rt, freedv_callsign, strlen(freedv_callsign));
         reliable_text_use_with_freedv(params->rt, params->fdv, &ReliableTextRx, NULL);
