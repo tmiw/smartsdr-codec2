@@ -130,6 +130,8 @@ static void* vita_processing_loop()
 	return NULL;
 }
 
+extern pthread_attr_t global_pthread_properties;
+
 unsigned short vita_init(freedv_proc_t params)
 {
     freedv_params = params;
@@ -174,12 +176,8 @@ unsigned short vita_init(freedv_proc_t params)
 	}
 
     vita_processing_thread = (pthread_t) NULL;
-    static const struct sched_param fifo_param = {
-            .sched_priority = 50
-    };
 
-	pthread_create(&vita_processing_thread, NULL, &vita_processing_loop, NULL);
-    pthread_setschedparam(vita_processing_thread, SCHED_RR, &fifo_param);
+	pthread_create(&vita_processing_thread, &global_pthread_properties, &vita_processing_loop, NULL);
 
 
     return ntohs(bind_addr.sin_port);

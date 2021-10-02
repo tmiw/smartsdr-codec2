@@ -30,11 +30,14 @@
 #include <netinet/in.h>
 #include <signal.h>
 #include <errno.h>
+#include <pthread.h>
 
 #include "discovery.h"
 #include "api-io.h"
 #include "vita-io.h"
 #include "utils.h"
+
+pthread_attr_t global_pthread_properties;
 
 const char* APP_NAME = "FreeDV";            // Name of Application
 
@@ -49,6 +52,17 @@ int main(int argc, char **argv)
     sigemptyset(&stop_sigs);
     sigaddset(&stop_sigs, SIGINT);
     sigaddset(&stop_sigs, SIGTERM);
+
+	// Set global pthread properties for each new thread we make.
+	struct sched_param sched_parameters;
+	sched_parameters.sched_priority = 50; //sched_get_priority_max(SCHED_FIFO) / 2;
+
+	//sched_setscheduler(0, SCHED_FIFO, &sched_parameters);
+
+	pthread_attr_init(&global_pthread_properties);
+	pthread_attr_setschedpolicy(&global_pthread_properties, SCHED_FIFO);
+	pthread_attr_setschedparam(&global_pthread_properties, &sched_parameters);
+	pthread_attr_setinheritsched(&global_pthread_properties, PTHREAD_EXPLICIT_SCHED);
 
 	// XXX TODO: Loop around discovery/initiate?
 

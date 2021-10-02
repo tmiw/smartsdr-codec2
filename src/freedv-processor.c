@@ -241,6 +241,8 @@ static void freedv_processing_loop_cleanup(void *arg)
     ringbuf_free(&params->tx_input_buffer);
 }
 
+static float tx_scale_factor = exp(6.0f/20.0f * log(10.0f));
+
 static void *_sched_waveform_thread(void *arg)
 {
     freedv_proc_t params = (freedv_proc_t) arg;
@@ -351,15 +353,15 @@ static void *_sched_waveform_thread(void *arg)
 
                     freedv_tx(params->fdv, mod_out, speech_in);
 
-                    // Make samples louder by 6dB to compensate for lower than expected power output otherwise on Flex (e.g. setting the power slider to max only gives 30-40W out on the 6300 using 700D).
-                    float scale_factor = exp(6.0f/20.0f * log(10.0f));
-                    for (int index = 0; index < tx_modem_samples; index++)
-                    {
-                        mod_out[index] *= scale_factor;
-                    }
                     soxr_process (tx_upsampler,
                                   mod_out, tx_modem_samples, NULL,
                                   resample_buffer, tx_modem_samples * SAMPLE_RATE_RATIO, &odone);
+
+                    // Make samples louder by 6dB to compensate for lower than expected power output otherwise on Flex (e.g. setting the power slider to max only gives 30-40W out on the 6300 using 700D).
+                    for (int index = 0; index < tx_modem_samples * SAMPLE_RATE_RATIO; index++)
+                    {
+                        resample_buffer[index] *= tx_scale_factor;
+                    }
 
                     ringbuf_memcpy_into (tx_output_buffer, resample_buffer, odone * sizeof(float));
                 }
@@ -392,14 +394,11 @@ static void *_sched_waveform_thread(void *arg)
 	return NULL;
 }
 
+extern pthread_attr_t global_pthread_properties;
+
 static void start_processing_thread(freedv_proc_t params)
 {
-    static const struct sched_param fifo_param = {
-            .sched_priority = 50
-    };
-
-	pthread_create(&params->thread, NULL, &_sched_waveform_thread, params);
-	pthread_setschedparam(params->thread, SCHED_RR, &fifo_param);
+	pthread_create(&params->thread, &global_pthread_properties, &_sched_waveform_thread, params);
 }
 
 void freedv_destroy(freedv_proc_t params)
@@ -479,9 +478,8 @@ void fdv_set_mode(freedv_proc_t params, int mode)
         reliable_text_use_with_freedv(params->rt, params->fdv, &ReliableTextRx, NULL);
     }
 
-    freedv_send_meters(params->fdv);
-    freedv_resize_ringbuf(&params->rx_input_buffer, freedv_get_n_max_modem_samples(params->fdv));
-    freedv_resize_ringbuf(&params->tx_input_buffer, freedv_get_n_speech_samples(params->fdv));
+    freedv_resize_ringbuf(&params->rx_input_buffer, RADIO_SAMPLE_RATE); //freedv_get_n_max_modem_samples(params->fdv));
+    freedv_resize_ringbuf(&params->tx_input_buffer, RADIO_SAMPLE_RATE); //freedv_get_n_speech_samples(params->fdv));
 
     start_processing_thread(params);
 }
@@ -504,10 +502,8 @@ freedv_proc_t freedv_init(int mode)
         reliable_text_use_with_freedv(params->rt, params->fdv, &ReliableTextRx, NULL);
     }
 
-    freedv_send_meters(params->fdv);
-
-    size_t rx_ringbuffer_size = freedv_get_n_max_modem_samples(params->fdv) * sizeof(float) * 10;
-    size_t tx_ringbuffer_size = freedv_get_n_speech_samples(params->fdv) * sizeof(float) * 10;
+    size_t rx_ringbuffer_size = RADIO_SAMPLE_RATE * sizeof(float) * 10; // freedv_get_n_max_modem_samples(params->fdv) * sizeof(float) *  PACKET_SAMPLES * 10;
+    size_t tx_ringbuffer_size = rx_ringbuffer_size; //freedv_get_n_speech_samples(params->fdv) * sizeof(float) * PACKET_SAMPLES * 10;
     params->rx_input_buffer = ringbuf_new(rx_ringbuffer_size);
     params->tx_input_buffer = ringbuf_new(tx_ringbuffer_size);
 
