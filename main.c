@@ -60,9 +60,9 @@ int main(int argc, char **argv)
 	//sched_setscheduler(0, SCHED_FIFO, &sched_parameters);
 
 	pthread_attr_init(&global_pthread_properties);
-	pthread_attr_setschedpolicy(&global_pthread_properties, SCHED_FIFO);
-	pthread_attr_setschedparam(&global_pthread_properties, &sched_parameters);
-	pthread_attr_setinheritsched(&global_pthread_properties, PTHREAD_EXPLICIT_SCHED);
+	//pthread_attr_setschedpolicy(&global_pthread_properties, SCHED_FIFO);
+	//pthread_attr_setschedparam(&global_pthread_properties, &sched_parameters);
+	//pthread_attr_setinheritsched(&global_pthread_properties, PTHREAD_EXPLICIT_SCHED);
 
 	// XXX TODO: Loop around discovery/initiate?
 
