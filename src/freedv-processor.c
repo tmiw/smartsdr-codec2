@@ -235,6 +235,7 @@ static void freedv_processing_loop_cleanup(void *arg)
     if (params->rt)
     {
         reliable_text_destroy(params->rt);
+        params->rt = NULL;
     }
     freedv_close(params->fdv);
     ringbuf_free(&params->rx_input_buffer);
