@@ -455,6 +455,7 @@ static struct freedv *fdv_open(int mode)
 static void ReliableTextRx(reliable_text_t rt, const char* txt_ptr, int length, void* state)
 {
     // Does nothing for now. We may want to pipe the received callsign to the companion app eventually.
+    reliable_text_reset(rt);
 }
 
 void fdv_set_mode(freedv_proc_t params, int mode)
