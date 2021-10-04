@@ -45,7 +45,7 @@
 #include "api.h"
 
 #define RADIO_SAMPLE_RATE 24000
-#define FREEDV_SAMPLE_RATE 8000
+#define FREEDV_SAMPLE_RATE (freedv_get_modem_sample_rate(params->fdv))
 #define SAMPLE_RATE_RATIO (RADIO_SAMPLE_RATE / FREEDV_SAMPLE_RATE)
 #define PACKET_SAMPLES  128
 
@@ -291,14 +291,18 @@ static void *_sched_waveform_thread(void *arg)
 			continue;
 		}
 
-		long nanoseconds = 1000000000 / PACKET_SAMPLES * SAMPLE_RATE_RATIO;
+		//output("tv_sec = %d, tv_nsec = %d\n", timeout.tv_sec, timeout.tv_nsec);
+		long nanoseconds = 40000000; //1000000000 / PACKET_SAMPLES * SAMPLE_RATE_RATIO;
+                long seconds = (timeout.tv_nsec + nanoseconds) / 1000000000;
 		timeout.tv_nsec = (timeout.tv_nsec + nanoseconds) % 1000000000;
-		timeout.tv_sec += (timeout.tv_nsec + nanoseconds) / 1000000000;
+		timeout.tv_sec += seconds;
+		//output("modified tv_sec = %d, tv_nsec = %d\n", timeout.tv_sec, timeout.tv_nsec);
 
 		while((ret = sem_timedwait(&params->input_sem, &timeout)) == -1 && errno == EINTR);
 
 		if(ret == -1) {
             if(errno == ETIMEDOUT) {
+				output("Timed out while waiting for semaphore.\n");
 				continue;
 			} else {
 				output("Error acquiring semaphore: %s\n", strerror(errno));
@@ -504,8 +508,8 @@ freedv_proc_t freedv_init(int mode)
         reliable_text_use_with_freedv(params->rt, params->fdv, &ReliableTextRx, NULL);
     }
 
-    size_t rx_ringbuffer_size = RADIO_SAMPLE_RATE * sizeof(float) * 10; // freedv_get_n_max_modem_samples(params->fdv) * sizeof(float) *  PACKET_SAMPLES * 10;
-    size_t tx_ringbuffer_size = rx_ringbuffer_size; //freedv_get_n_speech_samples(params->fdv) * sizeof(float) * PACKET_SAMPLES * 10;
+    size_t rx_ringbuffer_size = freedv_get_n_max_modem_samples(params->fdv) * sizeof(float) * 10;
+    size_t tx_ringbuffer_size = freedv_get_n_speech_samples(params->fdv) * sizeof(float) * 10;
     params->rx_input_buffer = ringbuf_new(rx_ringbuffer_size);
     params->tx_input_buffer = ringbuf_new(tx_ringbuffer_size);
 
