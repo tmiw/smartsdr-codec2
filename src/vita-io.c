@@ -34,6 +34,7 @@
 #include <time.h>
 #include <pthread.h>
 #include <stdbool.h>
+#include <fcntl.h>
 
 #include "utils.h"
 #include "vita.h"
@@ -51,83 +52,84 @@ static uint32_t rx_stream_id, tx_stream_id;
 
 static void vita_process_waveform_packet(struct vita_packet *packet, ssize_t length)
 {
-	unsigned long payload_length = ((htons(packet->length) * sizeof(uint32_t)) - VITA_PACKET_HEADER_SIZE);
-	if(payload_length != length - VITA_PACKET_HEADER_SIZE) {
-		output("VITA header size doesn't match bytes read from network (%d != %d - %d) -- %d\n", payload_length, length, VITA_PACKET_HEADER_SIZE, sizeof(struct vita_packet));
-		return;
-	}
+    unsigned long payload_length = ((htons(packet->length) * sizeof(uint32_t)) - VITA_PACKET_HEADER_SIZE);
+    if(payload_length != length - VITA_PACKET_HEADER_SIZE) {
+        output("VITA header size doesn't match bytes read from network (%d != %d - %d) -- %d\n", payload_length, length, VITA_PACKET_HEADER_SIZE, sizeof(struct vita_packet));
+        return;
+    }
 
-	if (!(htonl(packet->stream_id) & 0x0001u)) {
-	    //  Receive Packet Processing
-	    rx_stream_id = packet->stream_id;
+    if (!(htonl(packet->stream_id) & 0x0001u)) {
+        //  Receive Packet Processing
+        rx_stream_id = packet->stream_id;
         freedv_queue_samples(freedv_params, 0, payload_length, packet->if_samples);
-	} else {
-	    //  Transmit packet processing
+    } else {
+        //  Transmit packet processing
         tx_stream_id = packet->stream_id;
         freedv_queue_samples(freedv_params, 1, payload_length, packet->if_samples);
-	}
+    }
 }
 
 static void vita_parse_packet(struct vita_packet *packet, size_t packet_len)
 {
-	// make sure packet is long enough to inspect for VITA header info
-	if (packet_len < VITA_PACKET_HEADER_SIZE)
+    // make sure packet is long enough to inspect for VITA header info
+    if (packet_len < VITA_PACKET_HEADER_SIZE)
         return;
 
-	if((packet->class_id & VITA_OUI_MASK) != FLEX_OUI)
-		return;
+    if((packet->class_id & VITA_OUI_MASK) != FLEX_OUI)
+        return;
 
-	switch(packet->stream_id & STREAM_BITS_MASK) {
-		case STREAM_BITS_WAVEFORM | STREAM_BITS_IN:
+    switch(packet->stream_id & STREAM_BITS_MASK) {
+        case STREAM_BITS_WAVEFORM | STREAM_BITS_IN:
             vita_process_waveform_packet(packet, packet_len);
-			break;
-		default:
-			output("Undefined stream in %08X", htonl(packet->stream_id));
-			break;
-	}
+            break;
+        default:
+            output("Undefined stream in %08X", htonl(packet->stream_id));
+            break;
+    }
 }
 
 static void* vita_processing_loop()
 {
-	struct vita_packet packet;
-	int ret;
-	ssize_t bytes_received = 0;
+    struct vita_packet packet;
+    int ret;
+    ssize_t bytes_received = 0;
 
-	struct pollfd fds = {
-		.fd = vita_sock,
-		.events = POLLIN,
-		.revents = 0,
-	};
+    struct pollfd fds = {
+        .fd = vita_sock,
+        .events = POLLIN,
+        .revents = 0,
+    };
 
-	output("Beginning VITA Listener Loop...\n");
+    output("Beginning VITA Listener Loop...\n");
     vita_processing_thread_abort = false;
 
-	while(!vita_processing_thread_abort) {
-		ret = poll(&fds, 1, 500);
+    pthread_setname_np(pthread_self(), "FreeDV VitaIO");
+    struct timespec ts;
+    while(!vita_processing_thread_abort) {
+        ret = poll(&fds, 1, 500);
 
-		if (ret == 0) {
-			// timeout
-			continue;
-		} else if (ret == -1) {
-			if (errno != EINTR)
-			{
-				// Interrupted system call errors are fine.
-				// Anything else should print an error.
-				output("VITA poll failed: %s\n", strerror(errno));
-			}
-			continue;
-		}
+        if (ret == 0) {
+            // timeout
+            continue;
+        } else if (ret == -1) {
+            if (errno != EINTR)
+            {
+                // Interrupted system call errors are fine.
+                // Anything else should print an error.
+                output("VITA poll failed: %s\n", strerror(errno));
+            }
+            continue;
+        }
 
-		if ((bytes_received = recv(vita_sock, &packet, sizeof(packet), 0)) == -1) {
-			output("VITA read failed: %s\n", strerror(errno));
-			continue;
-		}
-
+        if ((bytes_received = recv(vita_sock, &packet, sizeof(packet), 0)) == -1) {
+            output("VITA read failed: %s\n", strerror(errno));
+            continue;
+        }
         vita_parse_packet(&packet, bytes_received);
-	}
+    }
 
-	output("Ending VITA Listener Loop...\n");
-	return NULL;
+    output("Ending VITA Listener Loop...\n");
+    return NULL;
 }
 
 extern pthread_attr_t global_pthread_properties;
@@ -135,49 +137,49 @@ extern pthread_attr_t global_pthread_properties;
 unsigned short vita_init(freedv_proc_t params)
 {
     freedv_params = params;
-	struct sockaddr_in bind_addr =  {
-		.sin_family = AF_INET,
-		.sin_addr.s_addr = htonl(INADDR_ANY),
-		.sin_port = 0,
-	};
-	socklen_t bind_addr_len = sizeof(bind_addr);
+    struct sockaddr_in bind_addr =  {
+        .sin_family = AF_INET,
+        .sin_addr.s_addr = htonl(INADDR_ANY),
+        .sin_port = 0,
+    };
+    socklen_t bind_addr_len = sizeof(bind_addr);
 
-	struct sockaddr_in radio_addr;
-	if (get_radio_addr(&radio_addr) == -1) {
-		output("Failed to get radio address: %s\n", strerror(errno));
-		return 0;
-	}
-	radio_addr.sin_port = htons(4993);
+    struct sockaddr_in radio_addr;
+    if (get_radio_addr(&radio_addr) == -1) {
+        output("Failed to get radio address: %s\n", strerror(errno));
+        return 0;
+    }
+    radio_addr.sin_port = htons(4993);
 
-	output("Initializing VITA-49 engine...\n");
+    output("Initializing VITA-49 engine...\n");
 
-	vita_sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-	if (vita_sock == -1) {
-		output(" Failed to initialize VITA socket: %s\n", strerror(errno));
-		return 0;
-	}
+    vita_sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (vita_sock == -1) {
+        output(" Failed to initialize VITA socket: %s\n", strerror(errno));
+        return 0;
+    }
 
-	if(bind(vita_sock, (struct sockaddr *)&bind_addr, sizeof(bind_addr))) {
-		output("error binding socket: %s\n",strerror(errno));
-		close(vita_sock);
-		return 0;
-	}
+    if(bind(vita_sock, (struct sockaddr *)&bind_addr, sizeof(bind_addr))) {
+        output("error binding socket: %s\n",strerror(errno));
+        close(vita_sock);
+        return 0;
+    }
 
-	if(connect(vita_sock, (struct sockaddr *) &radio_addr, sizeof(struct sockaddr_in)) == -1) {
-		output("Couldn't connect socket: %s\n", strerror(errno));
-		close(vita_sock);
-		return 0;
-	}
+    if(connect(vita_sock, (struct sockaddr *) &radio_addr, sizeof(struct sockaddr_in)) == -1) {
+        output("Couldn't connect socket: %s\n", strerror(errno));
+        close(vita_sock);
+        return 0;
+    }
 
-	if (getsockname(vita_sock, (struct sockaddr *) &bind_addr, &bind_addr_len) == -1) {
-		output("Couldn't get port number of VITA socket\n");
-		close(vita_sock);
-		return 0;
-	}
+    if (getsockname(vita_sock, (struct sockaddr *) &bind_addr, &bind_addr_len) == -1) {
+        output("Couldn't get port number of VITA socket\n");
+        close(vita_sock);
+        return 0;
+    }
 
     vita_processing_thread = (pthread_t) NULL;
 
-	pthread_create(&vita_processing_thread, &global_pthread_properties, &vita_processing_loop, NULL);
+    pthread_create(&vita_processing_thread, &global_pthread_properties, &vita_processing_loop, NULL);
 
 
     return ntohs(bind_addr.sin_port);

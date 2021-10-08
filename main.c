@@ -42,45 +42,45 @@ pthread_attr_t global_pthread_properties;
 const char* APP_NAME = "FreeDV";            // Name of Application
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-// 	main()
+//     main()
 
 int main(int argc, char **argv)
 {
-	struct sockaddr_in radio_address;
+    struct sockaddr_in radio_address;
     sigset_t stop_sigs;
 
     sigemptyset(&stop_sigs);
     sigaddset(&stop_sigs, SIGINT);
     sigaddset(&stop_sigs, SIGTERM);
 
-	// Set global pthread properties for each new thread we make.
-	struct sched_param sched_parameters;
-	sched_parameters.sched_priority = 50; //sched_get_priority_max(SCHED_FIFO) / 2;
+    // Set global pthread properties for each new thread we make.
+    struct sched_param sched_parameters;
+    sched_parameters.sched_priority = 30; //sched_get_priority_max(SCHED_FIFO) / 2;
 
-	//sched_setscheduler(0, SCHED_FIFO, &sched_parameters);
+    //sched_setscheduler(0, SCHED_FIFO, &sched_parameters);
 
-	pthread_attr_init(&global_pthread_properties);
-	//pthread_attr_setschedpolicy(&global_pthread_properties, SCHED_FIFO);
-	//pthread_attr_setschedparam(&global_pthread_properties, &sched_parameters);
-	//pthread_attr_setinheritsched(&global_pthread_properties, PTHREAD_EXPLICIT_SCHED);
+    pthread_attr_init(&global_pthread_properties);
+    /*pthread_attr_setschedpolicy(&global_pthread_properties, SCHED_FIFO);
+    pthread_attr_setschedparam(&global_pthread_properties, &sched_parameters);
+    pthread_attr_setinheritsched(&global_pthread_properties, PTHREAD_EXPLICIT_SCHED);*/
 
-	// XXX TODO: Loop around discovery/initiate?
+    // XXX TODO: Loop around discovery/initiate?
 
-	radio_address.sin_family = AF_INET;
+    radio_address.sin_family = AF_INET;
 
-	if (discover_radio(&radio_address) == -1) {
-		output("Failed to find radio\n");
-		exit(1);
-	}
-	output("Found radio at %s:%d\n", inet_ntoa(radio_address.sin_addr), ntohs(radio_address.sin_port));
+    if (discover_radio(&radio_address) == -1) {
+        output("Failed to find radio\n");
+        exit(1);
+    }
+    output("Found radio at %s:%d\n", inet_ntoa(radio_address.sin_addr), ntohs(radio_address.sin_port));
 
-	if (api_io_init(&radio_address) == -1) {
-		output("Couldn't connect to radio\n");
-		exit(1);
-	}
+    if (api_io_init(&radio_address) == -1) {
+        output("Couldn't connect to radio\n");
+        exit(1);
+    }
 
-	output("Radio connected\n");
-	send_api_command("sub slice all");
+    output("Radio connected\n");
+    send_api_command("sub slice all");
     if (meter_table[0].id == 0)
         register_meters(meter_table);
     
@@ -95,7 +95,7 @@ int main(int argc, char **argv)
 
     vita_stop();
     api_io_stop();
-	output("FreeDV Waveform Stopped.\n");
+    output("FreeDV Waveform Stopped.\n");
     exit(0);
 }
 
