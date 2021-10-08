@@ -53,10 +53,8 @@ static char freedv_callsign[10];
 
 struct freedv_proc_t {
     pthread_t thread;
-    pthread_t downsample_thread;
     int running;
     sem_t input_sem;
-    sem_t downsample_sem;
     struct freedv *fdv;
     ringbuf_t rx_input_buffer;
     ringbuf_t process_buffer;
@@ -235,7 +233,6 @@ static void freedv_processing_loop_cleanup(void *arg)
     freedv_proc_t params = (freedv_proc_t) arg;
 
     sem_destroy(&params->input_sem);
-    sem_destroy(&params->downsample_sem);
     if (params->rt)
     {
         reliable_text_destroy(params->rt);
@@ -444,7 +441,6 @@ void freedv_destroy(freedv_proc_t params)
     if (params->running) {
         params->running = 0;
         pthread_join(params->thread, NULL);
-        pthread_join(params->downsample_thread, NULL);
     }
 
     sem_destroy(&params->input_sem);
@@ -531,7 +527,6 @@ freedv_proc_t freedv_init(int mode)
     freedv_proc_t params = malloc(sizeof(struct freedv_proc_t));
 
     sem_init(&params->input_sem, 0, 0);
-    sem_init(&params->downsample_sem, 0, 0);
     params->xmit_state = READY;
 
     params->fdv = fdv_open(mode);
