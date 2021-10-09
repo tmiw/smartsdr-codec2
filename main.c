@@ -91,10 +91,12 @@ int main(int argc, char **argv)
 
     output("Program stop requested.  Shutting Down\n");
 
+    // Implicitly calls vita_stop() as we force the slice away from FDV mode.
     deregister_waveforms();
 
-    vita_stop();
+    //vita_stop();
     api_io_stop();
+
     output("FreeDV Waveform Stopped.\n");
     exit(0);
 }

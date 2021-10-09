@@ -103,10 +103,10 @@ static void change_to_fdv_mode(unsigned char slice) {
         return;
     }
 
-	//  Inform the radio of our chosen port
-	output("Using port %hu for VITA-49 communications\n", vita_port);
-	send_api_command("waveform set FreeDV-USB udpport=%d", vita_port);
-    send_api_command("waveform set FreeDV-LSB udpport=%d", vita_port);
+    //  Inform the radio of our chosen port
+    output("Using port %hu for VITA-49 communications\n", vita_port);
+    if (!is_lsb) send_api_command("waveform set FreeDV-USB udpport=%d", vita_port);
+    else send_api_command("waveform set FreeDV-LSB udpport=%d", vita_port);
     send_api_command("client udpport %d", vita_port);
 
     send_waveform_status();
@@ -117,60 +117,60 @@ static void change_from_fdv_mode(unsigned char slice)
     if (slice != active_slice)
         return;
 
-	vita_stop();
-	active_slice = -1;
+    vita_stop();
+    active_slice = -1;
 }
 
 static int process_radio_status(char **argv, int argc)
 {
-	long slice;
-	char *value;
-	char *end;
-	struct kwarg *kwargs;
-	char *callsign;
+    long slice;
+    char *value;
+    char *end;
+    struct kwarg *kwargs;
+    char *callsign;
 
-	if (argc < 2) {
-		output("Not enough arguments to radio status message (%d)\n", argc);
-		return -1;
-	}
+    if (argc < 2) {
+        output("Not enough arguments to radio status message (%d)\n", argc);
+        return -1;
+    }
 
-	errno = 0;
-	kwargs = parse_kwargs(argv, argc, 1);
-	if((callsign = find_kwarg(kwargs, "callsign")) != NULL) {
-		// Reset callsign 
-		freedv_set_callsign(freedv_params, callsign);
-	}
+    errno = 0;
+    kwargs = parse_kwargs(argv, argc, 1);
+    if((callsign = find_kwarg(kwargs, "callsign")) != NULL) {
+        // Reset callsign 
+        freedv_set_callsign(freedv_params, callsign);
+    }
 
-	kwargs_destroy(&kwargs);
-	return 0;
+    kwargs_destroy(&kwargs);
+    return 0;
 }
 
 static int process_slice_status(char **argv, int argc)
 {
-	long slice;
-	char *value;
-	char *end;
-	struct kwarg *kwargs;
-	char *mode;
+    long slice;
+    char *value;
+    char *end;
+    struct kwarg *kwargs;
+    char *mode;
 
-	if (argc < 3) {
-		output("Not enough arguments to slice status message (%d)\n", argc);
-		return -1;
-	}
+    if (argc < 3) {
+        output("Not enough arguments to slice status message (%d)\n", argc);
+        return -1;
+    }
 
-	errno = 0;
-	slice = strtol(argv[1], &end, 0);
-	if(*end) {
-		output("Invalid slice specification: %s\n", argv[1]);
-		return -1;
-	}
-	if (errno) {
-		output("Error converting slice: %s\n", strerror(errno));
-		return -1;
-	}
+    errno = 0;
+    slice = strtol(argv[1], &end, 0);
+    if(*end) {
+        output("Invalid slice specification: %s\n", argv[1]);
+        return -1;
+    }
+    if (errno) {
+        output("Error converting slice: %s\n", strerror(errno));
+        return -1;
+    }
 
-	kwargs = parse_kwargs(argv, argc, 2);
-	if((mode = find_kwarg(kwargs, "mode")) != NULL) {
+    kwargs = parse_kwargs(argv, argc, 2);
+    if((mode = find_kwarg(kwargs, "mode")) != NULL) {
         if (strcmp("FDVU", mode) == 0) {
             is_lsb = 0;
             change_to_fdv_mode(slice);
@@ -180,10 +180,10 @@ static int process_slice_status(char **argv, int argc)
         } else {
             change_from_fdv_mode(slice);
         }
-	}
+    }
 
-	kwargs_destroy(&kwargs);
-	return 0;
+    kwargs_destroy(&kwargs);
+    return 0;
 }
 
 static int process_interlock_status(char **argv, int argc)
@@ -221,10 +221,10 @@ static int process_interlock_status(char **argv, int argc)
 }
 
 static const struct dispatch_entry status_dispatch_table[] = {
-	{ "slice", &process_slice_status },
-	{ "radio", &process_radio_status },
+    { "slice", &process_slice_status },
+    { "radio", &process_radio_status },
     { "interlock", &process_interlock_status },
-	{ "", NULL },
+    { "", NULL },
 };
 
 static int process_slice_command(char **argv, int argc) {
@@ -294,8 +294,8 @@ static int process_slice_command(char **argv, int argc) {
 }
 
 static const struct dispatch_entry command_dispatch_table[] = {
-	{ "slice", &process_slice_command },
-	{ "", NULL },
+    { "slice", &process_slice_command },
+    { "", NULL },
 };
 
 
@@ -324,32 +324,32 @@ int process_waveform_command(unsigned int sequence, char *message)
 
 int register_meters(struct meter_def *meters)
 {
-	unsigned int response_code;
-	char meter_cmd[256];
-	char *response_message;
+    unsigned int response_code;
+    char meter_cmd[256];
+    char *response_message;
 
-	assert(meters != NULL);
+    assert(meters != NULL);
 
-	for (int i = 0; strlen(meters[i].name) != 0; ++i) {
-		snprintf(meter_cmd, sizeof(meter_cmd), "meter create name=%s type=WAVEFORM min=%f max=%f unit=%s fps=20", meters[i].name, meters[i].min, meters[i].max, meters[i].unit);
-		response_code = send_api_command_and_wait(meter_cmd, &response_message);
+    for (int i = 0; strlen(meters[i].name) != 0; ++i) {
+        snprintf(meter_cmd, sizeof(meter_cmd), "meter create name=%s type=WAVEFORM min=%f max=%f unit=%s fps=20", meters[i].name, meters[i].min, meters[i].max, meters[i].unit);
+        response_code = send_api_command_and_wait(meter_cmd, &response_message);
 
-		if (response_code != 0) {
-			output("Failed to register meter %s\n", meters[i].name);
-			free(response_message);
-			return -1;
-		}
+        if (response_code != 0) {
+            output("Failed to register meter %s\n", meters[i].name);
+            free(response_message);
+            return -1;
+        }
 
-		errno = 0;
-		meters[i].id = strtol(response_message, NULL, 10);
-		if (errno != 0) {
-			meters[i].id = 0;
-			output("Got nonsensical meter id for %s (%s)\n", meters[i].name, response_message);
-		}
+        errno = 0;
+        meters[i].id = strtol(response_message, NULL, 10);
+        if (errno != 0) {
+            meters[i].id = 0;
+            output("Got nonsensical meter id for %s (%s)\n", meters[i].name, response_message);
+        }
 
-		output("Allocated meter id %d\n", meters[i].id);
-		free(response_message);
-	}
+        output("Allocated meter id %d\n", meters[i].id);
+        free(response_message);
+    }
 }
 
 int find_meter_by_name(struct meter_def *meters, char *name)
@@ -367,21 +367,29 @@ int register_waveforms()
 {
     send_api_command("waveform create name=FreeDV-USB mode=FDVU underlying_mode=USB version=2.0.0");
     send_api_command("waveform set FreeDV-USB tx=1");
-    send_api_command("waveform set FreeDV-USB rx_filter depth=8");
-    send_api_command("waveform set FreeDV-USB tx_filter depth=8");
+    send_api_command("waveform set FreeDV-USB rx_filter depth=128");
+    send_api_command("waveform set FreeDV-USB tx_filter depth=128");
 
     send_api_command("waveform create name=FreeDV-LSB mode=FDVL underlying_mode=LSB version=2.0.0");
     send_api_command("waveform set FreeDV-LSB tx=1");
-    send_api_command("waveform set FreeDV-LSB rx_filter depth=8");
-    send_api_command("waveform set FreeDV-LSB tx_filter depth=8");
+    send_api_command("waveform set FreeDV-LSB rx_filter depth=128");
+    send_api_command("waveform set FreeDV-LSB tx_filter depth=128");
 
     return 0;
 }
 
 int deregister_waveforms()
 {
-    send_api_command_and_wait("waveform remove FreeDV-USB", NULL);
-    send_api_command_and_wait("waveform remove FreeDV-LSB", NULL);
+    if (active_slice != -1)
+    {
+        // Deselect FDV mode prior to deregistration.
+        char buf[1024];
+        sprintf(buf, "slice set %d mode=DIGU", active_slice);
+        send_api_command_and_wait(buf, NULL);
+    }
+ 
+    /*send_api_command_and_wait("waveform remove FreeDV-USB", NULL);
+    send_api_command_and_wait("waveform remove FreeDV-LSB", NULL);*/
 
     return 0;
 }
