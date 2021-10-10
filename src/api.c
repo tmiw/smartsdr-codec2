@@ -105,8 +105,8 @@ static void change_to_fdv_mode(unsigned char slice) {
 
     //  Inform the radio of our chosen port
     output("Using port %hu for VITA-49 communications\n", vita_port);
-    if (!is_lsb) send_api_command("waveform set FreeDV-USB udpport=%d", vita_port);
-    else send_api_command("waveform set FreeDV-LSB udpport=%d", vita_port);
+    send_api_command("waveform set FreeDV-USB udpport=%d", vita_port);
+    send_api_command("waveform set FreeDV-LSB udpport=%d", vita_port);
     send_api_command("client udpport %d", vita_port);
 
     send_waveform_status();
@@ -367,13 +367,13 @@ int register_waveforms()
 {
     send_api_command("waveform create name=FreeDV-USB mode=FDVU underlying_mode=USB version=2.0.0");
     send_api_command("waveform set FreeDV-USB tx=1");
-    send_api_command("waveform set FreeDV-USB rx_filter depth=128");
-    send_api_command("waveform set FreeDV-USB tx_filter depth=128");
+    send_api_command("waveform set FreeDV-USB rx_filter depth=8");
+    send_api_command("waveform set FreeDV-USB tx_filter depth=8");
 
     send_api_command("waveform create name=FreeDV-LSB mode=FDVL underlying_mode=LSB version=2.0.0");
     send_api_command("waveform set FreeDV-LSB tx=1");
-    send_api_command("waveform set FreeDV-LSB rx_filter depth=128");
-    send_api_command("waveform set FreeDV-LSB tx_filter depth=128");
+    send_api_command("waveform set FreeDV-LSB rx_filter depth=8");
+    send_api_command("waveform set FreeDV-LSB tx_filter depth=8");
 
     return 0;
 }
@@ -388,8 +388,8 @@ int deregister_waveforms()
         send_api_command_and_wait(buf, NULL);
     }
  
-    /*send_api_command_and_wait("waveform remove FreeDV-USB", NULL);
-    send_api_command_and_wait("waveform remove FreeDV-LSB", NULL);*/
+    send_api_command_and_wait("waveform remove FreeDV-USB", NULL);
+    send_api_command_and_wait("waveform remove FreeDV-LSB", NULL);
 
     return 0;
 }

@@ -161,18 +161,21 @@ unsigned short vita_init(freedv_proc_t params)
         return 0;
     }
 
+    output("Binding VITA socket...\n");
     if(bind(vita_sock, (struct sockaddr *)&bind_addr, sizeof(bind_addr))) {
         output("error binding socket: %s\n",strerror(errno));
         close(vita_sock);
         return 0;
     }
 
+    output("Connecting VITA socket...\n");
     if(connect(vita_sock, (struct sockaddr *) &radio_addr, sizeof(struct sockaddr_in)) == -1) {
         output("Couldn't connect socket: %s\n", strerror(errno));
         close(vita_sock);
         return 0;
     }
 
+    output("Getting VITA socket port number...\n");
     if (getsockname(vita_sock, (struct sockaddr *) &bind_addr, &bind_addr_len) == -1) {
         output("Couldn't get port number of VITA socket\n");
         close(vita_sock);
@@ -181,9 +184,14 @@ unsigned short vita_init(freedv_proc_t params)
 
     vita_processing_thread = (pthread_t) NULL;
 
-    pthread_create(&vita_processing_thread, &global_pthread_properties, &vita_processing_loop, NULL);
-
-
+    output("Creating VITA thread...\n");
+    if (pthread_create(&vita_processing_thread, &global_pthread_properties, &vita_processing_loop, NULL) == -1)
+    {
+        output("Could not create VITA thread: %s\n", strerror(errno));
+        close(vita_sock);
+        return 0;
+    }
+    
     return ntohs(bind_addr.sin_port);
 }
 

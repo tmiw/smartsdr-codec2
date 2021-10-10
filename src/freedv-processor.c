@@ -54,7 +54,6 @@ static char freedv_callsign[10];
 struct freedv_proc_t {
     pthread_t thread;
     int running;
-    sem_t input_sem;
     struct freedv *fdv;
     ringbuf_t rx_input_buffer;
     ringbuf_t process_buffer;
@@ -64,6 +63,8 @@ struct freedv_proc_t {
     int squelch_enabled;
 
     reliable_text_t rt;
+    pthread_mutex_t queue_mtx;
+    pthread_cond_t waiter;
 
     // TODO: Meter table?
 };
@@ -187,6 +188,7 @@ void freedv_queue_samples(freedv_proc_t params, int tx, size_t len, uint32_t *sa
 {
     assert(params != NULL);
 
+    pthread_mutex_lock(&params->queue_mtx);
     unsigned int num_samples = len / sizeof(uint32_t);
     ringbuf_t buffer = tx ? params->tx_input_buffer : params->rx_input_buffer;
 
@@ -194,7 +196,8 @@ void freedv_queue_samples(freedv_proc_t params, int tx, size_t len, uint32_t *sa
         samples[i] = ntohl(samples[i * 2]);
 
     ringbuf_memcpy_into (buffer, samples, (num_samples / 2) * sizeof(uint32_t));
-    sem_post(&params->input_sem);
+    pthread_cond_signal(&params->waiter);
+    pthread_mutex_unlock(&params->queue_mtx);
 }
 
 static void freedv_send_buffer(ringbuf_t buffer, int tx, int flush)
@@ -232,7 +235,6 @@ static void freedv_processing_loop_cleanup(void *arg)
 {
     freedv_proc_t params = (freedv_proc_t) arg;
 
-    sem_destroy(&params->input_sem);
     if (params->rt)
     {
         reliable_text_destroy(params->rt);
@@ -242,6 +244,9 @@ static void freedv_processing_loop_cleanup(void *arg)
     ringbuf_free(&params->process_buffer);
     ringbuf_free(&params->rx_input_buffer);
     ringbuf_free(&params->tx_input_buffer);
+
+    pthread_cond_destroy(&params->waiter);
+    pthread_mutex_destroy(&params->queue_mtx);
 }
 
 static float tx_scale_factor = exp(6.0f/20.0f * log(10.0f));
@@ -292,22 +297,12 @@ static void *_sched_waveform_thread(void *arg)
             continue;
         }
 
-        long nanoseconds = 1000000000; //1000000000 / PACKET_SAMPLES * SAMPLE_RATE_RATIO;
+        long nanoseconds = (1000000000 / RADIO_SAMPLE_RATE) * PACKET_SAMPLES;
         long seconds = (timeout.tv_nsec + nanoseconds) / 1000000000;
         timeout.tv_nsec = (timeout.tv_nsec + nanoseconds) % 1000000000;
         timeout.tv_sec += seconds;
 
-        while((ret = sem_timedwait(&params->input_sem, &timeout)) == -1 && errno == EINTR);
-
-        if(ret == -1) {
-            if(errno == ETIMEDOUT) {
-                output("[process] Timed out while waiting for semaphore.\n");
-                continue;
-            } else {
-                output("Error acquiring semaphore: %s\n", strerror(errno));
-                continue;
-            }
-        }
+        pthread_mutex_lock(&params->queue_mtx);
 
         soxr_t int16_downsampler = NULL;
         ringbuf_t ringbuf_input = NULL;
@@ -328,6 +323,18 @@ static void *_sched_waveform_thread(void *arg)
                 break;
         }
 
+        while((ret = pthread_cond_timedwait(&params->waiter, &params->queue_mtx, &timeout)) == -1 && errno == EINTR);
+
+        if(ret == -1) {
+            if(errno == ETIMEDOUT) {
+                output("[process] Timed out while waiting for semaphore.\n");
+                continue;
+            } else {
+                output("Error acquiring semaphore: %s\n", strerror(errno));
+                continue;
+            }
+        }
+
         size_t odone_int16 = 0;
         while(ringbuf_input != NULL && ringbuf_bytes_used(ringbuf_input) >= (resample_buffer_size_downsample * sizeof(float)))
         {
@@ -339,6 +346,8 @@ static void *_sched_waveform_thread(void *arg)
 
             ringbuf_memcpy_into (params->process_buffer, resample_buffer_int16, odone_int16 * sizeof(short));
         }
+
+        pthread_mutex_unlock(&params->queue_mtx);
 
         //  TODO:  Create a "processing chain" structure to hold all of the data and abstract these into a single
         //         function.
@@ -369,9 +378,11 @@ static void *_sched_waveform_thread(void *arg)
                 break;
             case PTT_REQUESTED:
                 freedv_send_buffer(rx_output_buffer, 0, 1);
+                pthread_mutex_lock(&params->queue_mtx);
                 ringbuf_reset(params->tx_input_buffer);
                 ringbuf_reset(params->process_buffer);
                 ringbuf_reset(tx_output_buffer);
+                pthread_mutex_unlock(&params->queue_mtx);
                 break;
             case TRANSMITTING:
                 //  TX Processing
@@ -398,9 +409,11 @@ static void *_sched_waveform_thread(void *arg)
                 break;
             case UNKEY_REQUESTED:
                 freedv_send_buffer(tx_output_buffer, 1, 1);
+                pthread_mutex_lock(&params->queue_mtx);
                 ringbuf_reset(params->rx_input_buffer);
                 ringbuf_reset(params->process_buffer);
                 ringbuf_reset(rx_output_buffer);
+                pthread_mutex_unlock(&params->queue_mtx);
                 break;
         }
     }
@@ -443,12 +456,13 @@ void freedv_destroy(freedv_proc_t params)
         pthread_join(params->thread, NULL);
     }
 
-    sem_destroy(&params->input_sem);
     freedv_close(params->fdv);
     ringbuf_free(&params->process_buffer);
     ringbuf_free(&params->rx_input_buffer);
     ringbuf_free(&params->tx_input_buffer);
 
+    pthread_cond_destroy(&params->waiter);
+    pthread_mutex_destroy(&params->queue_mtx);
     free(params);
 }
 
@@ -526,7 +540,6 @@ freedv_proc_t freedv_init(int mode)
 {
     freedv_proc_t params = malloc(sizeof(struct freedv_proc_t));
 
-    sem_init(&params->input_sem, 0, 0);
     params->xmit_state = READY;
 
     params->fdv = fdv_open(mode);
@@ -548,6 +561,9 @@ freedv_proc_t freedv_init(int mode)
 
     params->squelch_enabled = 0;
     params->squelch_level = 0.0f;
+
+    pthread_cond_init(&params->waiter, NULL);
+    pthread_mutex_init(&params->queue_mtx, NULL);
 
     start_processing_thread(params);
 

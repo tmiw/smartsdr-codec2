@@ -37,7 +37,6 @@ struct ringbuf_t
     uint8_t *buf;
     uint8_t *head, *tail;
     size_t size;
-    pthread_mutex_t lock;
 };
 
 ringbuf_t
@@ -51,12 +50,6 @@ ringbuf_new(size_t capacity)
         rb->buf = malloc(rb->size);
 
         if (rb->buf == NULL) {
-            free(rb);
-            return 0;
-        }
-
-        if(pthread_mutex_init(&(rb->lock), NULL) != 0) {
-            free(rb->buf);
             free(rb);
             return 0;
         }
@@ -83,7 +76,6 @@ ringbuf_free(ringbuf_t *rb)
 {
     assert(rb && *rb);
     free((*rb)->buf);
-    pthread_mutex_destroy(&((*rb)->lock));
     free(*rb);
     *rb = 0;
 }
@@ -213,8 +205,6 @@ ringbuf_memset(ringbuf_t dst, int c, size_t len)
 void *
 ringbuf_memcpy_into(ringbuf_t dst, const void *src, size_t count)
 {
-    pthread_mutex_lock(&dst->lock);
-
     const uint8_t *u8src = src;
     const uint8_t *bufend = ringbuf_end(dst);
     int overflow = count > ringbuf_bytes_free(dst);
@@ -237,8 +227,6 @@ ringbuf_memcpy_into(ringbuf_t dst, const void *src, size_t count)
         dst->tail = ringbuf_nextp(dst, dst->head);
         assert(ringbuf_is_full(dst));
     }
-
-    pthread_mutex_unlock(&dst->lock);
 
     return dst->head;
 }
@@ -274,11 +262,8 @@ ringbuf_read(int fd, ringbuf_t rb, size_t count)
 void *
 ringbuf_memcpy_from(void *dst, ringbuf_t src, size_t count)
 {
-    pthread_mutex_lock(&src->lock);
-
     size_t bytes_used = ringbuf_bytes_used(src);
     if (count > bytes_used) {
-        pthread_mutex_unlock(&src->lock);
         return 0;
     }
 
@@ -298,8 +283,6 @@ ringbuf_memcpy_from(void *dst, ringbuf_t src, size_t count)
     }
 
     assert(count + ringbuf_bytes_used(src) == bytes_used);
-
-    pthread_mutex_unlock(&src->lock);
 
     return src->tail;
 }

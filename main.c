@@ -55,7 +55,7 @@ int main(int argc, char **argv)
 
     // Set global pthread properties for each new thread we make.
     struct sched_param sched_parameters;
-    sched_parameters.sched_priority = 30; //sched_get_priority_max(SCHED_FIFO) / 2;
+    sched_parameters.sched_priority = 51; //sched_get_priority_max(SCHED_FIFO) / 2;
 
     //sched_setscheduler(0, SCHED_FIFO, &sched_parameters);
 
@@ -94,7 +94,7 @@ int main(int argc, char **argv)
     // Implicitly calls vita_stop() as we force the slice away from FDV mode.
     deregister_waveforms();
 
-    //vita_stop();
+    vita_stop();
     api_io_stop();
 
     output("FreeDV Waveform Stopped.\n");
