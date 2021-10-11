@@ -209,6 +209,8 @@ void vita_stop()
     }
 }
 
+static time_t current_time = 0;
+static uint32_t frac_seq = 0;
 static void vita_send_packet(struct vita_packet *packet,  size_t payload_len)
 {
     ssize_t bytes_sent;
@@ -220,7 +222,12 @@ static void vita_send_packet(struct vita_packet *packet,  size_t payload_len)
     packet->length = htons(packet_len / 4); // Length is in 32-bit words
 
     packet->timestamp_int = time(NULL);
-    packet->timestamp_frac = 0;
+    if (packet->timestamp_int != current_time)
+    {
+        frac_seq = 0;
+    }
+    packet->timestamp_frac = frac_seq++;
+    current_time = packet->timestamp_int;
 
     if ((bytes_sent = send(vita_sock, packet, packet_len, 0)) == -1) {
         output("Error sending vita packet: %s\n", strerror(errno));
