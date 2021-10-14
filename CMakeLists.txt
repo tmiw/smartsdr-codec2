@@ -76,6 +76,7 @@ ExternalProject_Add(soxr
         GIT_SHALLOW ON
         GIT_PROGRESS ON
         EXCLUDE_FROM_ALL ON
+        PATCH_COMMAND patch -p1 < ${CMAKE_SOURCE_DIR}/soxr_disable_vfpv4.patch
         BUILD_COMMAND cmake --build . --target soxr
         INSTALL_COMMAND ""
         CMAKE_CACHE_ARGS

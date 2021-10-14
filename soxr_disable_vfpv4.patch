@@ -1,0 +1,40 @@
+diff --git a/cmake/Modules/FindSIMD32.cmake b/cmake/Modules/FindSIMD32.cmake
+index 9e42373..aff848b 100644
+--- a/cmake/Modules/FindSIMD32.cmake
++++ b/cmake/Modules/FindSIMD32.cmake
+@@ -12,7 +12,7 @@ if (DEFINED SIMD32_C_FLAGS)
+ elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "^arm")
+   set (TRIAL_C_FLAGS
+     # Gcc
+-    "-mfpu=neon-vfpv4 -mcpu=cortex-a7"
++    "-mfpu=neon-vfpv3 -mcpu=cortex-a8"
+     "-mfpu=neon       -mfloat-abi=hard"
+     "-mfpu=neon       -mfloat-abi=softfp"
+     "-mfpu=neon       -mfloat-abi=soft"
+diff --git a/src/dev32s.h b/src/dev32s.h
+index 7edae86..f877e95 100644
+--- a/src/dev32s.h
++++ b/src/dev32s.h
+@@ -38,7 +38,7 @@ SIMD_INLINE(void) vStorSum(float * a, v4_t b) {
+ #define vZero()      vdupq_n_f32(0)
+ #define vMul(a,b)    vmulq_f32(a,b)
+ #define vAdd(a,b)    vaddq_f32(a,b)
+-#define vMac(a,b,c)  vmlaq_f32(c,a,b)
++#define vMac(a,b,c)  (vAdd(vMul(a,b), c)) /*vmlaq_f32(c,a,b)*/
+ #define vLds(a)      vld1q_dup_f32(&(a))
+ #define vLd(a)       vld1q_f32(a)
+ #define vLdu(a)      vld1q_f32(a)
+diff --git a/src/pffft.c b/src/pffft.c
+index 46c841e..00ea80b 100644
+--- a/src/pffft.c
++++ b/src/pffft.c
+@@ -164,7 +164,7 @@ typedef float32x4_t v4sf;
+ #  define VZERO() vdupq_n_f32(0)
+ #  define VMUL(a,b) vmulq_f32(a,b)
+ #  define VADD(a,b) vaddq_f32(a,b)
+-#  define VMADD(a,b,c) vmlaq_f32(c,a,b)
++#  define VMADD(a,b,c) (VADD(VMUL(a,b), c)) /*vmlaq_f32(c,a,b)*/
+ #  define VSUB(a,b) vsubq_f32(a,b)
+ #  define LD_PS1(p) vld1q_dup_f32(&(p))
+ #  define INTERLEAVE2(in1, in2, out1, out2) { float32x4x2_t tmp__ = vzipq_f32(in1,in2); out1=tmp__.val[0]; out2=tmp__.val[1]; }
+
