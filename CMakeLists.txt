@@ -121,7 +121,7 @@ endif(CMAKE_SYSTEM_PROCESSOR MATCHES "^arm")
 
 FetchContent_Declare(codec2
   GIT_REPOSITORY https://github.com/drowe67/codec2.git
-  GIT_TAG origin/ms-arm-flex6k
+  GIT_TAG origin/ms-arm-flex6k-nomerge
   GIT_SHALLOW OFF
   GIT_PROGRESS OFF
 )
