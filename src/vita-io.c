@@ -90,28 +90,53 @@ static void vita_parse_packet(struct vita_packet *packet, size_t packet_len)
     }
 }
 
+#define MAX_PACKETS_TO_RECEIVE 16
+
 static void* vita_processing_loop()
 {
-    struct vita_packet packet;
-    int ret;
-    ssize_t bytes_received = 0;
+    struct vita_packet packet[MAX_PACKETS_TO_RECEIVE];
+    struct iovec iovec[MAX_PACKETS_TO_RECEIVE];
+    struct mmsghdr msgvec[MAX_PACKETS_TO_RECEIVE];
 
-    struct pollfd fds = {
-        .fd = vita_sock,
-        .events = POLLIN,
-        .revents = 0,
-    };
+    int ret;
+    size_t bytes_received = 0;
 
     output("Beginning VITA Listener Loop...\n");
     vita_processing_thread_abort = false;
 
     pthread_setname_np(pthread_self(), "FreeDV VitaIO");
-    struct timespec ts;
+    struct timespec timeout;
     while(!vita_processing_thread_abort) {
-        ret = poll(&fds, 1, 500);
+        if(clock_gettime(CLOCK_REALTIME, &timeout) == -1) {
+            output("Couldn't get time.\n");
+            continue;
+        }
+
+        long nanoseconds = 500000000;
+        long seconds = (timeout.tv_nsec + nanoseconds) / 1000000000;
+        timeout.tv_nsec = (timeout.tv_nsec + nanoseconds) % 1000000000;
+        timeout.tv_sec += seconds;
+
+    for (int i = 0; i < MAX_PACKETS_TO_RECEIVE; i++)
+    {
+        iovec[i].iov_base = &packet[i];
+        iovec[i].iov_len = sizeof(packet[i]);
+
+        msgvec[i].msg_hdr.msg_name = NULL;
+        msgvec[i].msg_hdr.msg_namelen = 0;
+        msgvec[i].msg_hdr.msg_iovlen = 1;
+        msgvec[i].msg_hdr.msg_iov = &iovec[i];
+        msgvec[i].msg_hdr.msg_control = NULL;
+        msgvec[i].msg_hdr.msg_controllen = 0;
+        msgvec[i].msg_hdr.msg_flags = 0;
+        msgvec[i].msg_len = 0;
+    }
+
+        ret = recvmmsg(vita_sock, msgvec, MAX_PACKETS_TO_RECEIVE, MSG_WAITFORONE, &timeout);
 
         if (ret == 0) {
             // timeout
+            output("VITA recv timed out\n");
             continue;
         } else if (ret == -1) {
             if (errno != EINTR)
@@ -123,11 +148,11 @@ static void* vita_processing_loop()
             continue;
         }
 
-        if ((bytes_received = recv(vita_sock, &packet, sizeof(packet), 0)) == -1) {
-            output("VITA read failed: %s\n", strerror(errno));
-            continue;
+        for (int i = 0; i < ret; i++)
+        {
+            bytes_received = msgvec[i].msg_len;
+            vita_parse_packet(&packet[i], bytes_received);
         }
-        vita_parse_packet(&packet, bytes_received);
     }
 
     output("Ending VITA Listener Loop...\n");
@@ -229,7 +254,7 @@ static void vita_send_packet(struct vita_packet *packet,  size_t payload_len)
     packet->timestamp_frac = frac_seq++;
     current_time = packet->timestamp_int;
 
-    if ((bytes_sent = send(vita_sock, packet, packet_len, 0)) == -1) {
+    if ((bytes_sent = send(vita_sock, packet, packet_len, MSG_DONTWAIT)) == -1) {
         output("Error sending vita packet: %s\n", strerror(errno));
         return;
     }

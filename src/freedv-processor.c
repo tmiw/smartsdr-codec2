@@ -362,8 +362,6 @@ static void *_sched_waveform_thread(void *arg)
                     size_t odone;
 
                     ringbuf_memcpy_from(demod_in, params->process_buffer, radio_samples * sizeof(short));
-                    //nout = radio_samples;
-                    //memcpy(speech_out, demod_in, nout * sizeof(short));
                     nout = freedv_rx(params->fdv, speech_out, demod_in);
                     freedv_send_meters(params->fdv);
 
@@ -405,7 +403,7 @@ static void *_sched_waveform_thread(void *arg)
 
                     ringbuf_memcpy_into (tx_output_buffer, resample_buffer, odone * sizeof(float));
                 }
-                freedv_send_buffer(tx_output_buffer, 1, 0);
+                freedv_send_buffer(tx_output_buffer, 1, 1);
                 break;
             case UNKEY_REQUESTED:
                 freedv_send_buffer(tx_output_buffer, 1, 1);

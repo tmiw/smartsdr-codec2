@@ -31,6 +31,9 @@
 #include <signal.h>
 #include <errno.h>
 #include <pthread.h>
+#include <ifaddrs.h>
+#include <errno.h>
+#include <string.h>
 
 #include "discovery.h"
 #include "api-io.h"
@@ -40,6 +43,38 @@
 pthread_attr_t global_pthread_properties;
 
 const char* APP_NAME = "FreeDV";            // Name of Application
+
+static void determine_if_local(struct sockaddr_in* radio_address)
+{
+    struct ifaddrs* ifaddr;
+
+    if (getifaddrs(&ifaddr) == -1)
+    {
+        output("Could not get list of interfaces: %s\n", strerror(errno));
+        return;
+    }
+
+    struct ifaddrs* ifa = ifaddr;
+    while (ifa != NULL)
+    {
+        if (ifa->ifa_addr != NULL)
+        {
+            if (ifa->ifa_addr->sa_family == AF_INET)
+            {
+                if (((struct sockaddr_in*)ifa->ifa_addr)->sin_addr.s_addr == radio_address->sin_addr.s_addr)
+                {
+                    output("Waveform is on same host as radio, using localhost instead.\n");
+                    radio_address->sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+                    break;
+                }
+            }
+        }
+
+        ifa = ifa->ifa_next;
+    }
+
+    freeifaddrs(ifaddr);
+}
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 //     main()
@@ -77,6 +112,8 @@ int main(int argc, char **argv)
     }
     output("Found radio at %s:%d\n", inet_ntoa(radio_address.sin_addr), ntohs(radio_address.sin_port));
 
+    determine_if_local(&radio_address);
+
     if (api_io_init(&radio_address) == -1) {
         output("Couldn't connect to radio\n");
         exit(1);
@@ -94,10 +131,9 @@ int main(int argc, char **argv)
 
     output("Program stop requested.  Shutting Down\n");
 
-    // Implicitly calls vita_stop() as we force the slice away from FDV mode.
-    deregister_waveforms();
-
     vita_stop();
+
+    deregister_waveforms();
     api_io_stop();
 
     output("FreeDV Waveform Stopped.\n");
