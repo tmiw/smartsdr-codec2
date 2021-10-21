@@ -117,21 +117,21 @@ static void* vita_processing_loop()
         timeout.tv_nsec = (timeout.tv_nsec + nanoseconds) % 1000000000;
         timeout.tv_sec += seconds;
 
-    for (int i = 0; i < MAX_PACKETS_TO_RECEIVE; i++)
-    {
-        iovec[i].iov_base = &packet[i];
-        iovec[i].iov_len = sizeof(packet[i]);
-
-        msgvec[i].msg_hdr.msg_name = NULL;
-        msgvec[i].msg_hdr.msg_namelen = 0;
-        msgvec[i].msg_hdr.msg_iovlen = 1;
-        msgvec[i].msg_hdr.msg_iov = &iovec[i];
-        msgvec[i].msg_hdr.msg_control = NULL;
-        msgvec[i].msg_hdr.msg_controllen = 0;
-        msgvec[i].msg_hdr.msg_flags = 0;
-        msgvec[i].msg_len = 0;
-    }
-
+        for (int i = 0; i < MAX_PACKETS_TO_RECEIVE; i++)
+        {
+            iovec[i].iov_base = &packet[i];
+            iovec[i].iov_len = sizeof(packet[i]);
+    
+            msgvec[i].msg_hdr.msg_name = NULL;
+            msgvec[i].msg_hdr.msg_namelen = 0;
+            msgvec[i].msg_hdr.msg_iovlen = 1;
+            msgvec[i].msg_hdr.msg_iov = &iovec[i];
+            msgvec[i].msg_hdr.msg_control = NULL;
+            msgvec[i].msg_hdr.msg_controllen = 0;
+            msgvec[i].msg_hdr.msg_flags = 0;
+            msgvec[i].msg_len = 0;
+        }
+    
         ret = recvmmsg(vita_sock, msgvec, MAX_PACKETS_TO_RECEIVE, MSG_WAITFORONE, &timeout);
 
         if (ret == 0) {
