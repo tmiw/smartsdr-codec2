@@ -37,6 +37,7 @@
 #include <pthread.h>
 #include <stdbool.h>
 #include <fcntl.h>
+#include <aio.h>
 
 #include "utils.h"
 #include "vita.h"
@@ -234,10 +235,37 @@ void vita_stop()
     }
 }
 
+#define MAX_SEND_PACKETS_IN_QUEUE 32
+
+static struct vita_packet queued_packet[MAX_SEND_PACKETS_IN_QUEUE];
+static struct aiocb queued_packet_cb[MAX_SEND_PACKETS_IN_QUEUE];
+static int current_queue_index = 0;
+
 static time_t current_time = 0;
 static uint32_t frac_seq = 0;
-static void vita_send_packet(struct vita_packet *packet,  size_t payload_len)
+
+static struct aiocb* get_next_vita_queue_entry()
 {
+    int err = aio_error(&queued_packet_cb[current_queue_index]);
+    while(err == EINPROGRESS)
+    {
+        current_queue_index = (current_queue_index + 1) % MAX_SEND_PACKETS_IN_QUEUE;
+        err = aio_error(&queued_packet_cb[current_queue_index]);
+    }
+
+    memset(&queued_packet_cb[current_queue_index], 0, sizeof(struct aiocb));
+    queued_packet_cb[current_queue_index].aio_fildes = vita_sock;
+    queued_packet_cb[current_queue_index].aio_buf = &queued_packet[current_queue_index];
+    queued_packet_cb[current_queue_index].aio_sigevent.sigev_notify = SIGEV_NONE;
+
+    struct aiocb* ret = &queued_packet_cb[current_queue_index];
+    current_queue_index = (current_queue_index + 1) % MAX_SEND_PACKETS_IN_QUEUE;
+    return ret;
+}
+
+static void vita_send_packet(struct aiocb* cb,  size_t payload_len)
+{
+    struct vita_packet* packet = (struct vita_packet*)cb->aio_buf;
     ssize_t bytes_sent;
     size_t packet_len = VITA_PACKET_HEADER_SIZE + payload_len;
 
@@ -254,46 +282,41 @@ static void vita_send_packet(struct vita_packet *packet,  size_t payload_len)
     packet->timestamp_frac = frac_seq++;
     current_time = packet->timestamp_int;
 
-    if ((bytes_sent = send(vita_sock, packet, packet_len, MSG_DONTWAIT)) == -1) {
-        output("Error sending vita packet: %s\n", strerror(errno));
-        return;
-    }
-
-    if (bytes_sent != packet_len) {
-        output("Short write on vita send\n");
-        return;
-    }
+    cb->aio_nbytes = packet_len;
+    aio_write(cb);
 }
 
 void vita_send_meter_packet(void *meters, size_t len)
 {
-    struct vita_packet packet = {0};
+    struct aiocb* cb = get_next_vita_queue_entry();
+    struct vita_packet* packet = (struct vita_packet*)cb->aio_buf;
 
-    packet.packet_type = VITA_PACKET_TYPE_EXT_DATA_WITH_STREAM_ID;
-    packet.stream_id = METER_STREAM_ID;
-    packet.class_id = METER_CLASS_ID;
-    packet.timestamp_type = meter_sequence++;
+    packet->packet_type = VITA_PACKET_TYPE_EXT_DATA_WITH_STREAM_ID;
+    packet->stream_id = METER_STREAM_ID;
+    packet->class_id = METER_CLASS_ID;
+    packet->timestamp_type = meter_sequence++;
 
-    assert(len < sizeof(packet.raw_payload));
-    memcpy(packet.raw_payload, meters, len);
+    assert(len < sizeof(packet->raw_payload));
+    memcpy(packet->raw_payload, meters, len);
 
-    vita_send_packet(&packet, len);
+    vita_send_packet(cb, len);
 }
 
 static uint32_t audio_sequence = 0;
 void vita_send_audio_packet(uint32_t *samples, size_t len, unsigned int tx)
 {
-    struct vita_packet packet = {0};
+    struct aiocb* cb = get_next_vita_queue_entry();
+    struct vita_packet* packet = (struct vita_packet*)cb->aio_buf;
 
-    assert(len * 2 <= sizeof(packet.if_samples));
+    assert(len * 2 <= sizeof(packet->if_samples));
 
-    packet.packet_type = VITA_PACKET_TYPE_IF_DATA_WITH_STREAM_ID;
-    packet.stream_id = tx ? tx_stream_id : rx_stream_id;
-    packet.class_id = AUDIO_CLASS_ID;
-    packet.timestamp_type = audio_sequence++;
+    packet->packet_type = VITA_PACKET_TYPE_IF_DATA_WITH_STREAM_ID;
+    packet->stream_id = tx ? tx_stream_id : rx_stream_id;
+    packet->class_id = AUDIO_CLASS_ID;
+    packet->timestamp_type = audio_sequence++;
 
     for (unsigned int i = 0, j = 0; i < len / sizeof(uint32_t); ++i, j += 2)
-        packet.if_samples[j] = packet.if_samples[j + 1] = htonl(samples[i]);
+        packet->if_samples[j] = packet->if_samples[j + 1] = htonl(samples[i]);
 
-    vita_send_packet(&packet, len * 2);
+    vita_send_packet(cb, len * 2);
 }
