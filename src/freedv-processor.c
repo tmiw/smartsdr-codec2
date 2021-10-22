@@ -259,6 +259,7 @@ static float tx_scale_factor = exp(6.0f/20.0f * log(10.0f));
 //#define SAVE_TX_OUTPUT_TO_FILE
 //#define SAVE_TX_OUTPUT_TO_FILE_8K
 //#define ADD_GAIN_TO_TX_OUTPUT
+#define FREEDV_TX_TIMINGS
 
 static void *_sched_waveform_thread(void *arg)
 {
@@ -281,6 +282,10 @@ static void *_sched_waveform_thread(void *arg)
 #endif // defined(SAVE_TX_OUTPUT_TO_FILE)
 
     struct timespec timeout;
+#if defined(FREEDV_TX_TIMINGS)
+    struct timespec time_begin;
+    struct timespec time_end;
+#endif // defined(FREEDV_TX_TIMINGS)
 
     int num_speech_samples = freedv_get_n_speech_samples(params->fdv);
     int tx_modem_samples = freedv_get_n_nom_modem_samples(params->fdv);
@@ -318,6 +323,10 @@ static void *_sched_waveform_thread(void *arg)
             output("Couldn't get time.\n");
             continue;
         }
+
+#if defined(FREEDV_TX_TIMINGS)
+        memcpy(&time_begin, &timeout, sizeof(struct timespec));
+#endif // defined(FREEDV_TX_TIMINGS)
 
         long nanoseconds = (1000000000 / RADIO_SAMPLE_RATE) * PACKET_SAMPLES;
         long seconds = (timeout.tv_nsec + nanoseconds) / 1000000000;
@@ -487,6 +496,25 @@ static void *_sched_waveform_thread(void *arg)
                 pthread_mutex_unlock(&params->queue_mtx);
                 break;
         }
+
+#if defined(FREEDV_TX_TIMINGS)
+        if(clock_gettime(CLOCK_REALTIME, &time_end) == -1) {
+            output("Warning: could not get end time for timing checks (errno = %d)\n", errno);
+        } else {
+            long nanosec_diff = time_end.tv_nsec - time_begin.tv_nsec;
+            long sec_diff = time_end.tv_sec - time_begin.tv_sec;
+            if (nanosec_diff < 0) {
+                sec_diff--;
+                nanosec_diff += 1000000000;
+            }
+
+            // We receive 10 VITA packets in ~53.3ms @ 24000sps (1280 samples req'd for 700D TX), 
+            // so the longest running operation here should not exceed this to guarantee smooth output.
+            if (sec_diff > 0 || nanosec_diff > 53333333) {
+                output("XXX Exceeded operation max time (s = %d, ns = %d)\n", sec_diff, nanosec_diff);
+            }
+        }
+#endif // defined(FREEDV_TX_TIMINGS)
     }
 
     output("Processing thread stopped...\n");
