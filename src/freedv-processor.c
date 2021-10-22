@@ -257,6 +257,7 @@ static float tx_scale_factor = exp(6.0f/20.0f * log(10.0f));
 //#define SINE_WAVE_RX
 //#define SINE_WAVE_TX
 //#define SAVE_TX_OUTPUT_TO_FILE
+//#define SAVE_TX_OUTPUT_TO_FILE_8K
 //#define ADD_GAIN_TO_TX_OUTPUT
 
 static void *_sched_waveform_thread(void *arg)
@@ -273,6 +274,10 @@ static void *_sched_waveform_thread(void *arg)
 
 #if defined(SAVE_TX_OUTPUT_TO_FILE)
     FILE* fp = fopen("24khztx.raw", "wb");
+#endif // defined(SAVE_TX_OUTPUT_TO_FILE)
+
+#if defined(SAVE_TX_OUTPUT_TO_FILE_8K)
+    FILE* fp8 = fopen("8khztx.raw", "wb");
 #endif // defined(SAVE_TX_OUTPUT_TO_FILE)
 
     struct timespec timeout;
@@ -457,6 +462,10 @@ static void *_sched_waveform_thread(void *arg)
                     fwrite(resample_buffer, sizeof(float), odone, fp);
 #endif // defined(SAVE_TX_OUTPUT_TO_FILE)
 
+#if defined(SAVE_TX_OUTPUT_TO_FILE_8K)
+                    fwrite(mod_out, sizeof(short), tx_modem_samples, fp8);
+#endif // defined(SAVE_TX_OUTPUT_TO_FILE_8K)
+
                     ringbuf_memcpy_into (tx_output_buffer, resample_buffer, odone * sizeof(float));
                     freedv_send_buffer(tx_output_buffer, 1, 0);
                 }
@@ -465,6 +474,10 @@ static void *_sched_waveform_thread(void *arg)
 #if defined(SAVE_TX_OUTPUT_TO_FILE)
                 fflush(fp);
 #endif // defined(SAVE_TX_OUTPUT_TO_FILE)
+
+#if defined(SAVE_TX_OUTPUT_TO_FILE_8K)
+                fflush(fp8);
+#endif // defined(SAVE_TX_OUTPUT_TO_FILE_8K)
 
                 freedv_send_buffer(tx_output_buffer, 1, 1);
                 pthread_mutex_lock(&params->queue_mtx);
@@ -480,6 +493,10 @@ static void *_sched_waveform_thread(void *arg)
 
 #if defined(SAVE_TX_OUTPUT_TO_FILE)
     fclose(fp);
+#endif // defined(SAVE_TX_OUTPUT_TO_FILE)
+
+#if defined(SAVE_TX_OUTPUT_TO_FILE_8K)
+    fclose(fp8);
 #endif // defined(SAVE_TX_OUTPUT_TO_FILE)
 
     free(speech_in);
@@ -615,8 +632,8 @@ freedv_proc_t freedv_init(int mode)
         reliable_text_use_with_freedv(params->rt, params->fdv, &ReliableTextRx, NULL);
     }
 
-    size_t rx_ringbuffer_size = freedv_get_n_max_modem_samples(params->fdv) * sizeof(float) * 10;
-    size_t tx_ringbuffer_size = freedv_get_n_speech_samples(params->fdv) * sizeof(float) * 10;
+    size_t rx_ringbuffer_size = RADIO_SAMPLE_RATE /*freedv_get_n_max_modem_samples(params->fdv)*/ * sizeof(float) * 10;
+    size_t tx_ringbuffer_size = RADIO_SAMPLE_RATE /*freedv_get_n_speech_samples(params->fdv)*/ * sizeof(float) * 10;
     params->rx_input_buffer = ringbuf_new(rx_ringbuffer_size);
     params->tx_input_buffer = ringbuf_new(tx_ringbuffer_size);
     params->process_buffer = ringbuf_new(PACKET_SAMPLES * sizeof(float) * 100);
