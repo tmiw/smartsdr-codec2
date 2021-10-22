@@ -251,6 +251,14 @@ static void freedv_processing_loop_cleanup(void *arg)
 
 static float tx_scale_factor = exp(6.0f/20.0f * log(10.0f));
 
+// Enable the following for various debugging
+//#define ANALOG_PASSTHROUGH_RX
+//#define ANALOG_PASSTHROUGH_TX
+//#define SINE_WAVE_RX
+//#define SINE_WAVE_TX
+//#define SAVE_TX_OUTPUT_TO_FILE
+//#define ADD_GAIN_TO_TX_OUTPUT
+
 static void *_sched_waveform_thread(void *arg)
 {
     freedv_proc_t params = (freedv_proc_t) arg;
@@ -258,13 +266,22 @@ static void *_sched_waveform_thread(void *arg)
     int nout;
     int ret;
 
+#if defined(SINE_WAVE_RX) || defined(SINE_WAVE_TX)
+    short sinewave[] = {8000, 0, -8000, 0};
+    int sw_idx = 0;
+#endif // defined(SINE_WAVE_RX) || defined(SINE_WAVE_TX)
+
+#if defined(SAVE_TX_OUTPUT_TO_FILE)
+    FILE* fp = fopen("24khztx.raw", "wb");
+#endif // defined(SAVE_TX_OUTPUT_TO_FILE)
+
     struct timespec timeout;
 
     int num_speech_samples = freedv_get_n_speech_samples(params->fdv);
     int tx_modem_samples = freedv_get_n_nom_modem_samples(params->fdv);
     int rx_max_modem_samples = freedv_get_n_max_modem_samples(params->fdv);
 
-    soxr_io_spec_t io_spec = io_spec = soxr_io_spec(SOXR_INT16_I, SOXR_FLOAT32_I);
+    soxr_io_spec_t io_spec = soxr_io_spec(SOXR_INT16_I, SOXR_FLOAT32_I);
     soxr_t rx_upsampler = soxr_create(FREEDV_SAMPLE_RATE, RADIO_SAMPLE_RATE, 1, NULL, &io_spec, NULL, NULL);
     soxr_t tx_upsampler = soxr_create(FREEDV_SAMPLE_RATE, RADIO_SAMPLE_RATE, 1, NULL, &io_spec, NULL, NULL);
 
@@ -351,28 +368,46 @@ static void *_sched_waveform_thread(void *arg)
 
         //  TODO:  Create a "processing chain" structure to hold all of the data and abstract these into a single
         //         function.
+        int radio_samples = 0;
         switch(params->xmit_state) {
             case READY:
             case RECEIVE:
                 //  RX Processing
-                for (int radio_samples = freedv_nin(params->fdv);
-                     ringbuf_bytes_used(params->process_buffer) >= radio_samples * sizeof(short);
-                     radio_samples = freedv_nin(params->fdv)) {
-
+#if defined(ANALOG_PASSTHROUGH_RX) || defined(SINE_WAVE_RX)
+                radio_samples = PACKET_SAMPLES;
+#else
+                radio_samples = freedv_nin(params->fdv);
+#endif // defined(ANALOG_PASSTHROUGH_RX) || defined(SINE_WAVE_RX)
+                while (ringbuf_bytes_used(params->process_buffer) >= radio_samples * sizeof(short)) {
                     size_t odone;
 
                     ringbuf_memcpy_from(demod_in, params->process_buffer, radio_samples * sizeof(short));
+#if defined(ANALOG_PASSTHROUGH_RX)
+                    memcpy(speech_out, demod_in, radio_samples * sizeof(short));
+                    nout = radio_samples;
+#elif defined(SINE_WAVE_RX)
+                    for (int index = 0; index < radio_samples; index++)
+                    {
+                        speech_out[index] = sinewave[sw_idx];
+                        sw_idx = (sw_idx + 1) % (sizeof(sinewave)/sizeof(short));
+                    }
+                    nout = radio_samples;
+#else
                     nout = freedv_rx(params->fdv, speech_out, demod_in);
                     freedv_send_meters(params->fdv);
+#endif // ANALOG_PASSTHROUGH_RX || SINE_WAVE_RX
 
                     soxr_process (rx_upsampler,
                                   speech_out, nout, NULL,
                                   resample_buffer, nout * SAMPLE_RATE_RATIO, &odone);
 
                     ringbuf_memcpy_into(rx_output_buffer, resample_buffer, odone * sizeof(float));
+                    freedv_send_buffer(rx_output_buffer, 0, 0);
+#if !defined(ANALOG_PASSTHROUGH_RX) && !defined(SINE_WAVE_RX)
+                    radio_samples = freedv_nin(params->fdv);
+#endif // !defined(ANALOG_PASSTHROUGH_RX) && !defined(SINE_WAVE_RX)
                 }
 
-                freedv_send_buffer(rx_output_buffer, 0, 0);
                 break;
             case PTT_REQUESTED:
                 freedv_send_buffer(rx_output_buffer, 0, 1);
@@ -389,23 +424,48 @@ static void *_sched_waveform_thread(void *arg)
 
                     ringbuf_memcpy_from(speech_in, params->process_buffer, num_speech_samples * sizeof(short));
 
+#if defined(ANALOG_PASSTHROUGH_TX)
+                    memcpy(mod_out, speech_in, num_speech_samples * sizeof(short));
+#elif defined(SINE_WAVE_TX)
+                    for (int index = 0; index < tx_modem_samples; index++)
+                    {
+                        mod_out[index] = sinewave[sw_idx];
+                        sw_idx = (sw_idx + 1) % (sizeof(sinewave)/sizeof(short));
+                    }
+#else
                     freedv_tx(params->fdv, mod_out, speech_in);
+#endif // ANALOG_PASSTHROUGH_TX || SINE_WAVE_TX
 
                     soxr_process (tx_upsampler,
                                   mod_out, tx_modem_samples, NULL,
                                   resample_buffer, tx_modem_samples * SAMPLE_RATE_RATIO, &odone);
+                    assert(odone <= tx_modem_samples * SAMPLE_RATE_RATIO);
 
-                    // Make samples louder by 6dB to compensate for lower than expected power output otherwise on Flex (e.g. setting the power slider to max only gives 30-40W out on the 6300 using 700D).
                     for (int index = 0; index < odone; index++)
                     {
+#if defined(ADD_GAIN_TO_TX_OUTPUT)
+                        // Make samples louder by 6dB to compensate for lower than expected 
+                        // power output otherwise on Flex (e.g. setting the power slider to 
+                        // max only gives 30-40W out on the 6300 using 700D).
                         resample_buffer[index] *= tx_scale_factor;
+#endif // defined(ADD_GAIN_TO_TX_OUTPUT)
+
+                        assert(resample_buffer[index] >= -1.0 && resample_buffer[index] <= 1.0);
                     }
 
+#if defined(SAVE_TX_OUTPUT_TO_FILE)
+                    fwrite(resample_buffer, sizeof(float), odone, fp);
+#endif // defined(SAVE_TX_OUTPUT_TO_FILE)
+
                     ringbuf_memcpy_into (tx_output_buffer, resample_buffer, odone * sizeof(float));
+                    freedv_send_buffer(tx_output_buffer, 1, 0);
                 }
-                freedv_send_buffer(tx_output_buffer, 1, 1);
                 break;
             case UNKEY_REQUESTED:
+#if defined(SAVE_TX_OUTPUT_TO_FILE)
+                fflush(fp);
+#endif // defined(SAVE_TX_OUTPUT_TO_FILE)
+
                 freedv_send_buffer(tx_output_buffer, 1, 1);
                 pthread_mutex_lock(&params->queue_mtx);
                 ringbuf_reset(params->rx_input_buffer);
@@ -417,6 +477,10 @@ static void *_sched_waveform_thread(void *arg)
     }
 
     output("Processing thread stopped...\n");
+
+#if defined(SAVE_TX_OUTPUT_TO_FILE)
+    fclose(fp);
+#endif // defined(SAVE_TX_OUTPUT_TO_FILE)
 
     free(speech_in);
     free(speech_out);
