@@ -91,7 +91,7 @@ static void vita_parse_packet(struct vita_packet *packet, size_t packet_len)
     }
 }
 
-#define MAX_PACKETS_TO_RECEIVE 16
+#define MAX_PACKETS_TO_RECEIVE 3
 
 static void* vita_processing_loop()
 {
@@ -113,7 +113,7 @@ static void* vita_processing_loop()
             continue;
         }
 
-        long nanoseconds = 500000000;
+        long nanoseconds = 5333333; // (1000000000 / RADIO_SAMPLE_RATE) * 128
         long seconds = (timeout.tv_nsec + nanoseconds) / 1000000000;
         timeout.tv_nsec = (timeout.tv_nsec + nanoseconds) % 1000000000;
         timeout.tv_sec += seconds;
