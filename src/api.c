@@ -365,12 +365,12 @@ int find_meter_by_name(struct meter_def *meters, char *name)
 
 int register_waveforms()
 {
-    send_api_command("waveform create name=FreeDV-USB mode=FDVU underlying_mode=USB version=2.0.0");
+    send_api_command("waveform create name=FreeDV-USB mode=FDVU underlying_mode=DIGU version=2.0.0");
     send_api_command("waveform set FreeDV-USB tx=1");
     send_api_command("waveform set FreeDV-USB rx_filter depth=8");
     send_api_command("waveform set FreeDV-USB tx_filter depth=8");
 
-    send_api_command("waveform create name=FreeDV-LSB mode=FDVL underlying_mode=LSB version=2.0.0");
+    send_api_command("waveform create name=FreeDV-LSB mode=FDVL underlying_mode=DIGL version=2.0.0");
     send_api_command("waveform set FreeDV-LSB tx=1");
     send_api_command("waveform set FreeDV-LSB rx_filter depth=8");
     send_api_command("waveform set FreeDV-LSB tx_filter depth=8");
