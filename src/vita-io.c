@@ -91,7 +91,7 @@ static void vita_parse_packet(struct vita_packet *packet, size_t packet_len)
     }
 }
 
-#define MAX_PACKETS_TO_RECEIVE 3
+#define MAX_PACKETS_TO_RECEIVE 1
 
 static void* vita_processing_loop()
 {
@@ -154,6 +154,8 @@ static void* vita_processing_loop()
             bytes_received = msgvec[i].msg_len;
             vita_parse_packet(&packet[i], bytes_received);
         }
+
+        freedv_signal_processing_thread(freedv_params);
     }
 
     output("Ending VITA Listener Loop...\n");

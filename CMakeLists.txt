@@ -151,6 +151,10 @@ target_link_libraries(freedv_rx2 CMSISDSP codec2)
 target_link_libraries(freedv waveform  ${SOXR_LIB_PATH} CMSISDSP codec2 m rt pthread)
 else(CMAKE_SYSTEM_PROCESSOR MATCHES "^arm")
 target_link_libraries(freedv waveform  ${SOXR_LIB_PATH} codec2 m rt pthread)
+add_executable(freedv_tx2 ${codec2_SOURCE_DIR}/src/freedv_tx.c)
+target_link_libraries(freedv_tx2 codec2)
+add_executable(freedv_rx2 ${codec2_SOURCE_DIR}/src/freedv_rx.c)
+target_link_libraries(freedv_rx2 codec2)
 endif(CMAKE_SYSTEM_PROCESSOR MATCHES "^arm")
 # ${CODEC2_LIB_PATH}
 

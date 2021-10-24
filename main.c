@@ -23,6 +23,7 @@
  *
  */
 
+#define _GNU_SOURCE
 #include <stdlib.h>
 #include <stdio.h>
 #include <sys/socket.h>
@@ -34,6 +35,7 @@
 #include <ifaddrs.h>
 #include <errno.h>
 #include <string.h>
+#include <aio.h>
 
 #include "discovery.h"
 #include "api-io.h"
@@ -101,6 +103,13 @@ int main(int argc, char **argv)
     /*pthread_attr_setschedpolicy(&global_pthread_properties, SCHED_FIFO);
     pthread_attr_setschedparam(&global_pthread_properties, &sched_parameters);
     pthread_attr_setinheritsched(&global_pthread_properties, PTHREAD_EXPLICIT_SCHED);*/
+
+    // Set AIO parameters to optimize for single core.
+    struct aioinit aio_args = {
+        .aio_threads = 1,
+        .aio_num = 32, /* Should match MAX_SEND_PACKETS_IN_QUEUE in vita-io.c */
+    };
+    aio_init(&aio_args);
 
     // XXX TODO: Loop around discovery/initiate?
 

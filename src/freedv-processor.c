@@ -188,14 +188,22 @@ void freedv_queue_samples(freedv_proc_t params, int tx, size_t len, uint32_t *sa
 {
     assert(params != NULL);
 
-    pthread_mutex_lock(&params->queue_mtx);
     unsigned int num_samples = len / sizeof(uint32_t);
     ringbuf_t buffer = tx ? params->tx_input_buffer : params->rx_input_buffer;
 
     for (unsigned int i = 0; i < num_samples / 2; ++i)
         samples[i] = ntohl(samples[i * 2]);
 
+    pthread_mutex_lock(&params->queue_mtx);
     ringbuf_memcpy_into (buffer, samples, (num_samples / 2) * sizeof(uint32_t));
+    pthread_mutex_unlock(&params->queue_mtx);
+}
+
+void freedv_signal_processing_thread(freedv_proc_t params)
+{
+    assert(params != NULL);
+
+    pthread_mutex_lock(&params->queue_mtx);
     pthread_cond_signal(&params->waiter);
     pthread_mutex_unlock(&params->queue_mtx);
 }
@@ -249,7 +257,7 @@ static void freedv_processing_loop_cleanup(void *arg)
     pthread_mutex_destroy(&params->queue_mtx);
 }
 
-static float tx_scale_factor = exp(6.0f/20.0f * log(10.0f));
+static float tx_scale_factor = exp(5.0f/20.0f * log(10.0f));
 
 // Enable the following for various debugging
 //#define ANALOG_PASSTHROUGH_RX
@@ -258,8 +266,8 @@ static float tx_scale_factor = exp(6.0f/20.0f * log(10.0f));
 //#define SINE_WAVE_TX
 //#define SAVE_TX_OUTPUT_TO_FILE
 //#define SAVE_TX_OUTPUT_TO_FILE_8K
-//#define ADD_GAIN_TO_TX_OUTPUT
-#define FREEDV_TX_TIMINGS
+#define ADD_GAIN_TO_TX_OUTPUT
+//#define FREEDV_TX_TIMINGS
 
 static void *_sched_waveform_thread(void *arg)
 {
@@ -433,6 +441,7 @@ static void *_sched_waveform_thread(void *arg)
                 break;
             case TRANSMITTING:
                 //  TX Processing
+                if (ringbuf_bytes_used(params->process_buffer) >= num_speech_samples * sizeof(short) * 3) {
                 while (ringbuf_bytes_used(params->process_buffer) >= num_speech_samples * sizeof(short)) {
                     size_t odone;
 
@@ -458,7 +467,7 @@ static void *_sched_waveform_thread(void *arg)
                     for (int index = 0; index < odone; index++)
                     {
 #if defined(ADD_GAIN_TO_TX_OUTPUT)
-                        // Make samples louder by 6dB to compensate for lower than expected 
+                        // Make samples louder by 5dB to compensate for lower than expected 
                         // power output otherwise on Flex (e.g. setting the power slider to 
                         // max only gives 30-40W out on the 6300 using 700D).
                         resample_buffer[index] *= tx_scale_factor;
@@ -477,6 +486,7 @@ static void *_sched_waveform_thread(void *arg)
 
                     ringbuf_memcpy_into (tx_output_buffer, resample_buffer, odone * sizeof(float));
                     freedv_send_buffer(tx_output_buffer, 1, 0);
+                    }
                 }
                 break;
             case UNKEY_REQUESTED:
@@ -601,8 +611,8 @@ static struct freedv *fdv_open(int mode)
 
     if (mode == FREEDV_MODE_700D || mode == FREEDV_MODE_700E)
     {
-        freedv_set_clip(fdv, 1);
-        freedv_set_tx_bpf(fdv, 1);
+        freedv_set_clip(fdv, 0);
+        freedv_set_tx_bpf(fdv, 0);
     }
 
     return fdv;

@@ -47,5 +47,6 @@ void freedv_set_squelch_status(freedv_proc_t params, int status);
 float freedv_proc_get_squelch_level(freedv_proc_t params);
 int freedv_proc_get_squelch_status(freedv_proc_t params);
 void freedv_set_callsign(freedv_proc_t params, char* callsign);
+void freedv_signal_processing_thread(freedv_proc_t params);
 
 #endif /* SCHED_WAVEFORM_H_ */
