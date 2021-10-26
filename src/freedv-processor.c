@@ -314,7 +314,7 @@ static void *_sched_waveform_thread(void *arg)
     int resample_buffer_size = rx_max_modem_samples > tx_modem_samples ? rx_max_modem_samples : tx_modem_samples;
     float *resample_buffer = (float *) malloc( resample_buffer_size * SAMPLE_RATE_RATIO * sizeof(float));
 
-    int resample_buffer_size_downsample = PACKET_SAMPLES;
+    int resample_buffer_size_downsample = PACKET_SAMPLES * 10;
     float *resample_buffer_float32 = (float *) malloc( resample_buffer_size_downsample * sizeof(float));
     short *resample_buffer_int16 = (short *) malloc( resample_buffer_size_downsample * sizeof(short));
 
@@ -391,6 +391,7 @@ static void *_sched_waveform_thread(void *arg)
         //  TODO:  Create a "processing chain" structure to hold all of the data and abstract these into a single
         //         function.
         int radio_samples = 0;
+        int wait_for_tx_samples = 1;
         switch(params->xmit_state) {
             case READY:
             case RECEIVE:
@@ -438,11 +439,11 @@ static void *_sched_waveform_thread(void *arg)
                 ringbuf_reset(params->process_buffer);
                 ringbuf_reset(tx_output_buffer);
                 pthread_mutex_unlock(&params->queue_mtx);
+                wait_for_tx_samples = 3;
                 break;
             case TRANSMITTING:
                 //  TX Processing
-                if (ringbuf_bytes_used(params->process_buffer) >= num_speech_samples * sizeof(short) * 3) {
-                while (ringbuf_bytes_used(params->process_buffer) >= num_speech_samples * sizeof(short)) {
+                while (ringbuf_bytes_used(params->process_buffer) >= num_speech_samples * sizeof(short) * wait_for_tx_samples) {
                     size_t odone;
 
                     ringbuf_memcpy_from(speech_in, params->process_buffer, num_speech_samples * sizeof(short));
@@ -486,8 +487,8 @@ static void *_sched_waveform_thread(void *arg)
 
                     ringbuf_memcpy_into (tx_output_buffer, resample_buffer, odone * sizeof(float));
                     freedv_send_buffer(tx_output_buffer, 1, 0);
-                    }
                 }
+                wait_for_tx_samples = 1;
                 break;
             case UNKEY_REQUESTED:
 #if defined(SAVE_TX_OUTPUT_TO_FILE)
