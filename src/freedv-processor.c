@@ -470,8 +470,10 @@ static void *_sched_waveform_thread(void *arg)
 #if defined(ADD_GAIN_TO_TX_OUTPUT)
                         // Make samples louder by 5dB to compensate for lower than expected 
                         // power output otherwise on Flex (e.g. setting the power slider to 
-                        // max only gives 30-40W out on the 6300 using 700D).
+                        // max only gives 30-40W out on the 6300 using 700D + clipping/BPF on).
                         resample_buffer[index] *= tx_scale_factor;
+                        if (resample_buffer[index] > 1.0f) resample_buffer[index] = 1.0f;
+                        if (resample_buffer[index] < -1.0f) resample_buffer[index] = -1.0f;
 #endif // defined(ADD_GAIN_TO_TX_OUTPUT)
 
                         assert(resample_buffer[index] >= -1.0 && resample_buffer[index] <= 1.0);
