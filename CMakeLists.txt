@@ -14,7 +14,7 @@ set(CMAKE_C_FLAGS_RELEASE "-O3")
 set(CMAKE_C_FLAGS_DEBUG "-g -O3")
 set(CMAKE_C_FLAGS_ARMRELEASE "-Ofast -mcpu=cortex-a8 -mfpu=neon -DARM_MATH_NEON -D__EMBEDDED__ -D__REAL__ -DFREEDV_MODE_EN_DEFAULT=0 -DFREEDV_MODE_1600_EN=1 -DFREEDV_MODE_700D_EN=1 -DFREEDV_MODE_700E_EN=1 -DCODEC2_MODE_EN_DEFAULT=0 -DCODEC2_MODE_1300_EN=1 -DCODEC2_MODE_700C_EN=1")
 #set(CMAKE_C_FLAGS_ARMDEBUG "-g -std=gnu11 -mlittle-endian -mthumb -mthumb-interwork -u_printf_float -mcpu=cortex-a8 -ffunction-sections -fdata-sections -O3 -fsingle-precision-constant -Wdouble-promotion -mfpu=neon -mfloat-abi=hard -D__FPU_PRESENT=1 -D__FPU_USED=1 -D__EMBEDDED__ -D__REAL__ -DFREEDV_MODE_EN_DEFAULT=0 -DFREEDV_MODE_1600_EN=1 -DFREEDV_MODE_700D_EN=1 -DFREEDV_MODE_700E_EN=1 -DCODEC2_MODE_EN_DEFAULT=0 -DCODEC2_MODE_1300_EN=1 -DCODEC2_MODE_700C_EN=1")
-set(CMAKE_C_FLAGS_ARMDEBUG "-pg -g -std=gnu11 -mlittle-endian -u_printf_float -mcpu=cortex-a8 -ffunction-sections -fdata-sections -Ofast -fsingle-precision-constant -mfpu=auto -funsafe-math-optimizations -mfloat-abi=hard -D__FPU_PRESENT=1 -D__FPU_USED=1 -D__EMBEDDED__ -D__REAL__ -DARM_MATH_NEON -DFDV_ARM_BPF -DFDV_ARM_MATH -DFREEDV_MODE_EN_DEFAULT=0 -DFREEDV_MODE_1600_EN=1 -DFREEDV_MODE_700D_EN=1 -DFREEDV_MODE_700E_EN=1 -DCODEC2_MODE_EN_DEFAULT=0 -DCODEC2_MODE_1300_EN=1 -DCODEC2_MODE_700C_EN=1")
+set(CMAKE_C_FLAGS_ARMDEBUG "-g -std=gnu11 -mlittle-endian -u_printf_float -ffunction-sections -fdata-sections -Ofast -fsingle-precision-constant -mfpu=auto -funsafe-math-optimizations -mfloat-abi=hard -D__FPU_PRESENT=1 -D__FPU_USED=1 -DFREEDV_MODE_EN_DEFAULT=0 -DFREEDV_MODE_1600_EN=1 -DFREEDV_MODE_700D_EN=1 -DFREEDV_MODE_700E_EN=1 -DCODEC2_MODE_EN_DEFAULT=0 -DCODEC2_MODE_1300_EN=1 -DCODEC2_MODE_700C_EN=1")
 
 string(TOUPPER ${CMAKE_BUILD_TYPE} BUILD_TYPE_UC)
 
@@ -93,30 +93,30 @@ set(SOXR_LIB_PATH ${BINARY_DIR}/src/${CMAKE_STATIC_LIBRARY_PREFIX}soxr${CMAKE_ST
 
 #  This is conditional on ARM architecture!
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "^arm")
-message("Adding CMSIS to build.")
-FetchContent_Declare(CMSIS
-        GIT_REPOSITORY https://github.com/ARM-software/CMSIS_5.git
-        GIT_SHALLOW ON
-        GIT_PROGRESS ON
-        GIT_TAG 5.7.0
-)
-FetchContent_GetProperties(cmsis)
-if(NOT ${cmsis_POPULATED})
-  FetchContent_Populate(CMSIS)
-endif()
-
-set(ROOT ${cmsis_SOURCE_DIR})
-set(DSP ${cmsis_SOURCE_DIR}/CMSIS/DSP)
-set(ARM_CPU "cortex-a8")
-include(${cmsis_SOURCE_DIR}/CMSIS/DSP/Toolchain/GCC.cmake)
-# Add DSP folder to module path
-list(APPEND CMAKE_MODULE_PATH ${cmsis_SOURCE_DIR}/CMSIS/DSP ${cmsis_SOURCE_DIR}/CMSIS/DSP/Source)
-
-message("Adding ${cmsis_SOURCE_DIR}/CMSIS/DSP/Source")
-include_directories(AFTER ${cmsis_SOURCE_DIR}/CMSIS/Core/Include)
-include_directories(AFTER ${cmsis_SOURCE_DIR}/CMSIS/DSP/Include)
-include_directories(AFTER ${cmsis_SOURCE_DIR}/CMSIS/DSP/ComputeLibrary/Include)
-add_subdirectory(${cmsis_SOURCE_DIR}/CMSIS/DSP/Source ${cmsis_BINARY_DIR} EXCLUDE_FROM_ALL)
+#message("Adding CMSIS to build.")
+#FetchContent_Declare(CMSIS
+#        GIT_REPOSITORY https://github.com/ARM-software/CMSIS_5.git
+#        GIT_SHALLOW ON
+#        GIT_PROGRESS ON
+#        GIT_TAG 5.7.0
+#)
+#FetchContent_GetProperties(cmsis)
+#if(NOT ${cmsis_POPULATED})
+#  FetchContent_Populate(CMSIS)
+#endif()
+#
+#set(ROOT ${cmsis_SOURCE_DIR})
+#set(DSP ${cmsis_SOURCE_DIR}/CMSIS/DSP)
+#set(ARM_CPU "cortex-a8")
+#include(${cmsis_SOURCE_DIR}/CMSIS/DSP/Toolchain/GCC.cmake)
+## Add DSP folder to module path
+#list(APPEND CMAKE_MODULE_PATH ${cmsis_SOURCE_DIR}/CMSIS/DSP ${cmsis_SOURCE_DIR}/CMSIS/DSP/Source)
+#
+#message("Adding ${cmsis_SOURCE_DIR}/CMSIS/DSP/Source")
+#include_directories(AFTER ${cmsis_SOURCE_DIR}/CMSIS/Core/Include)
+#include_directories(AFTER ${cmsis_SOURCE_DIR}/CMSIS/DSP/Include)
+#include_directories(AFTER ${cmsis_SOURCE_DIR}/CMSIS/DSP/ComputeLibrary/Include)
+#add_subdirectory(${cmsis_SOURCE_DIR}/CMSIS/DSP/Source ${cmsis_BINARY_DIR} EXCLUDE_FROM_ALL)
 endif(CMAKE_SYSTEM_PROCESSOR MATCHES "^arm")
 
 FetchContent_Declare(codec2
@@ -144,11 +144,11 @@ add_executable(freedv main.c)
 target_include_directories(freedv PRIVATE src ${codec2_SOURCE_DIR}/src)
 if (CMAKE_SYSTEM_PROCESSOR MATCHES "^arm")
 add_executable(freedv_tx2 ${codec2_SOURCE_DIR}/src/freedv_tx.c)
-target_link_libraries(freedv_tx2 CMSISDSP codec2)
+target_link_libraries(freedv_tx2 codec2)
 add_executable(freedv_rx2 ${codec2_SOURCE_DIR}/src/freedv_rx.c)
-target_link_libraries(freedv_rx2 CMSISDSP codec2)
+target_link_libraries(freedv_rx2 codec2)
 
-target_link_libraries(freedv waveform  ${SOXR_LIB_PATH} CMSISDSP codec2 m rt pthread)
+target_link_libraries(freedv waveform  ${SOXR_LIB_PATH} codec2 m rt pthread)
 else(CMAKE_SYSTEM_PROCESSOR MATCHES "^arm")
 target_link_libraries(freedv waveform  ${SOXR_LIB_PATH} codec2 m rt pthread)
 add_executable(freedv_tx2 ${codec2_SOURCE_DIR}/src/freedv_tx.c)
