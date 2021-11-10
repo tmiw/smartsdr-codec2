@@ -609,10 +609,10 @@ freedv_proc_t freedv_init(int mode)
         reliable_text_use_with_freedv(params->rt, params->fdv, &ReliableTextRx, NULL);
     }
 
-    params->input_buffer = ringbuf_new(PACKET_SAMPLES * 10 * sizeof(float));
-    params->process_in_buffer = ringbuf_new(PACKET_SAMPLES / SAMPLE_RATE_RATIO * 100 * sizeof(short));
-    params->process_out_buffer = ringbuf_new(PACKET_SAMPLES / SAMPLE_RATE_RATIO * 100 * sizeof(short));
-    params->output_buffer = ringbuf_new(PACKET_SAMPLES * 10 * sizeof(float));
+    params->input_buffer = ringbuf_new(PACKET_SAMPLES * 100 * sizeof(float));
+    params->process_in_buffer = ringbuf_new(ringbuf_capacity(params->input_buffer) / sizeof(float) / SAMPLE_RATE_RATIO * sizeof(short));
+    params->process_out_buffer = ringbuf_new(ringbuf_capacity(params->process_in_buffer));
+    params->output_buffer = ringbuf_new(ringbuf_capacity(params->input_buffer));
 
     params->squelch_enabled = 0;
     params->squelch_level = 0.0f;
