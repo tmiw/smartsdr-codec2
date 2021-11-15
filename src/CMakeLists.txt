@@ -6,6 +6,7 @@ set(WAVEFORM_SRCS
         freedv-processor.c
         utils.c
         vita-io.c
+        dongle_protocol.c
 )
 
 add_library(waveform ${WAVEFORM_SRCS})

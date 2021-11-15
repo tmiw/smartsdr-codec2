@@ -43,9 +43,16 @@
 #include "vita-io.h"
 #include "ringbuf.h"
 #include "api.h"
+#include "dongle_protocol.h"
+
+#define USE_EXTERNAL_DONGLE
 
 #define RADIO_SAMPLE_RATE 24000
+#if defined(USE_EXTERNAL_DONGLE)
+#define FREEDV_SAMPLE_RATE 8000
+#else
 #define FREEDV_SAMPLE_RATE (freedv_get_modem_sample_rate(params->fdv))
+#endif // defined(USE_EXTERNAL_DONGLE)
 #define SAMPLE_RATE_RATIO (RADIO_SAMPLE_RATE / FREEDV_SAMPLE_RATE)
 #define PACKET_SAMPLES  128
 
@@ -54,7 +61,13 @@ static char freedv_callsign[10];
 struct freedv_proc_t {
     pthread_t thread;
     int running;
+#if defined(USE_EXTERNAL_DONGLE)
+    struct dongle_packet_handlers* port;
+#else
     struct freedv *fdv;
+    reliable_text_t rt;
+#endif // defined(USE_EXTERNAL_DONGLE)
+
     ringbuf_t input_buffer;
     ringbuf_t process_in_buffer;
     ringbuf_t process_out_buffer;
@@ -66,7 +79,6 @@ struct freedv_proc_t {
     soxr_t downsampler;
     soxr_t upsampler;
 
-    reliable_text_t rt;
     pthread_mutex_t queue_mtx;
     pthread_cond_t waiter;
 
@@ -235,23 +247,31 @@ void freedv_set_callsign(freedv_proc_t params, char* callsign)
 {
     strncpy(freedv_callsign, callsign, 9);
     output("Setting callsign to %s\n", freedv_callsign);
+#if !defined(USE_EXTERNAL_DONGLE)
+    // TBD: reliable_text support on dongle
     if (params && params->fdv && params->rt)
     {
         output("Sending callsign %s to reliable_text\n", freedv_callsign);
         reliable_text_set_string(params->rt, freedv_callsign, strlen(freedv_callsign));
     }
+#endif // defined(USE_EXTERNAL_DONGLE)
 }
 
 static void freedv_processing_loop_cleanup(void *arg)
 {
     freedv_proc_t params = (freedv_proc_t) arg;
 
+#if defined(USE_EXTERNAL_DONGLE)
+    dongle_close_port(params->port);
+#else
+    // TBD: reliable_text support on dongle
     if (params->rt)
     {
         reliable_text_destroy(params->rt);
         params->rt = NULL;
     }
     freedv_close(params->fdv);
+#endif // defined(USE_EXTERNAL_DONGLE)
     ringbuf_free(&params->input_buffer);
     ringbuf_free(&params->process_in_buffer);
     ringbuf_free(&params->process_out_buffer);
@@ -269,13 +289,40 @@ static float tx_scale_factor = exp(5.0f/20.0f * log(10.0f));
 //#define SINE_WAVE_RX
 //#define SINE_WAVE_TX
 #define ADD_GAIN_TO_TX_OUTPUT
-//#define FREEDV_TX_TIMINGS
+#define FREEDV_TX_TIMINGS
 
 #if defined(SINE_WAVE_RX) || defined(SINE_WAVE_TX)
 static short sinewave[] = {8000, 0, -8000, 0};
 static int sw_idx = 0;
 #endif // defined(SINE_WAVE_RX) || defined(SINE_WAVE_TX)
 
+#if defined(USE_EXTERNAL_DONGLE)
+static void rx_handling(freedv_proc_t params)
+{
+    short inBuf[DONGLE_AUDIO_LENGTH];
+
+    while (ringbuf_bytes_used(params->process_in_buffer) >= DONGLE_AUDIO_LENGTH * sizeof(short)) {
+        ringbuf_memcpy_from(inBuf, params->process_in_buffer, DONGLE_AUDIO_LENGTH * sizeof(short));
+        send_audio_packet(params->port, inBuf);
+
+        while(dongle_has_data_available(params->port, 0, 0))
+        {
+            struct dongle_packet packet;
+
+            if (read_packet(params->port, &packet) <= 0) break;
+            else if (packet.type != DONGLE_PACKET_AUDIO) continue;
+
+            ringbuf_memcpy_into (params->process_out_buffer, packet.packet_data.audio_data.audio, packet.length);
+        }
+    }
+}
+
+static void tx_handling(freedv_proc_t params)
+{
+    // RX and TX are the same for dongle on our side. The dongle does the heavy lifting.
+    rx_handling(params);
+}
+#else
 static void rx_handling(freedv_proc_t params)
 {
     int num_speech_samples = freedv_get_n_speech_samples(params->fdv);
@@ -352,41 +399,60 @@ static void tx_handling(freedv_proc_t params)
         ringbuf_memcpy_into (params->process_out_buffer, &mod_out[0], tx_modem_samples * sizeof(short));
     }
 }
+#endif // defined(USE_EXTERNAL_DONGLE)
 
 void downsample_input(freedv_proc_t params)
 {
-    size_t odone_int16 = 0;
-    short resample_buffer_int16[PACKET_SAMPLES / SAMPLE_RATE_RATIO]; 
-    float resample_buffer_float32[PACKET_SAMPLES];
+    int bytes_used_float = ringbuf_bytes_used(params->input_buffer);
+    int samples_used_float = bytes_used_float / sizeof(float);
+    if (samples_used_float == 0) return;
 
-    while(ringbuf_bytes_used(params->input_buffer) >= (PACKET_SAMPLES * sizeof(float)))
-    {
-        ringbuf_memcpy_from(resample_buffer_float32, params->input_buffer, PACKET_SAMPLES * sizeof(float));
+    int samples_used_int16 = samples_used_float / SAMPLE_RATE_RATIO + 1;
+    int bytes_used_int16 = samples_used_int16 * sizeof(short);
+    size_t idone = 0, odone = 0;
 
-        soxr_process (params->downsampler,
-                      resample_buffer_float32, PACKET_SAMPLES, NULL,
-                      resample_buffer_int16, PACKET_SAMPLES / SAMPLE_RATE_RATIO, &odone_int16);
+    float* resample_buffer_float32 = malloc(bytes_used_float);
+    short* resample_buffer_int16 = malloc(bytes_used_int16);
+    assert(resample_buffer_float32 && resample_buffer_int16);
 
-        ringbuf_memcpy_into (params->process_in_buffer, resample_buffer_int16, odone_int16 * sizeof(short));
-    }
+    ringbuf_memcpy_from (resample_buffer_float32, params->input_buffer, bytes_used_float);
+
+    soxr_process(
+        params->downsampler, resample_buffer_float32, samples_used_float, &idone,
+        resample_buffer_int16, samples_used_int16, &odone);
+
+    ringbuf_memcpy_into (params->process_in_buffer, resample_buffer_int16, odone * sizeof(short));
+    ringbuf_memcpy_into (params->input_buffer, &resample_buffer_float32[idone], (samples_used_float - idone) * sizeof(float));
+
+    free(resample_buffer_int16);
+    free(resample_buffer_float32);
 }
 
 void upsample_output(freedv_proc_t params)
 {
-    size_t odone_float32 = 0;
-    short resample_buffer_int16[PACKET_SAMPLES / SAMPLE_RATE_RATIO]; 
-    float resample_buffer_float32[PACKET_SAMPLES];
+    int bytes_used_int16 = ringbuf_bytes_used(params->process_out_buffer);
+    int samples_used_int16 = bytes_used_int16 / sizeof(short);
+    if (samples_used_int16 == 0) return;
 
-    while(ringbuf_bytes_used(params->process_out_buffer) >= (PACKET_SAMPLES / SAMPLE_RATE_RATIO * sizeof(short)))
-    {
-        ringbuf_memcpy_from(resample_buffer_int16, params->process_out_buffer, PACKET_SAMPLES / SAMPLE_RATE_RATIO * sizeof(short));
+    int samples_used_float = (samples_used_int16 + 1) * SAMPLE_RATE_RATIO;
+    int bytes_used_float = samples_used_float * sizeof(float);
+    size_t idone = 0, odone = 0;
 
-        soxr_process (params->upsampler,
-                      resample_buffer_int16, PACKET_SAMPLES / SAMPLE_RATE_RATIO, NULL,
-                      resample_buffer_float32, PACKET_SAMPLES, &odone_float32);
+    float* resample_buffer_float32 = malloc(bytes_used_float);
+    short* resample_buffer_int16 = malloc(bytes_used_int16);
+    assert(resample_buffer_float32 && resample_buffer_int16);
 
-        ringbuf_memcpy_into (params->output_buffer, resample_buffer_float32, odone_float32 * sizeof(float));
-    }
+    ringbuf_memcpy_from (resample_buffer_int16, params->process_out_buffer, bytes_used_int16);
+
+    soxr_process(
+        params->upsampler, resample_buffer_int16, samples_used_int16, &idone,
+        resample_buffer_float32, samples_used_float, &odone);
+
+    ringbuf_memcpy_into (params->output_buffer, resample_buffer_float32, odone * sizeof(float));
+    ringbuf_memcpy_into (params->process_out_buffer, &resample_buffer_int16[idone], (samples_used_int16 - idone) * sizeof(short));
+
+    free(resample_buffer_int16);
+    free(resample_buffer_float32);
 }
 
 static void *_sched_waveform_thread(void *arg)
@@ -472,6 +538,18 @@ static void *_sched_waveform_thread(void *arg)
             soxr_clear(params->upsampler);
             soxr_clear(params->downsampler);
             pthread_mutex_unlock(&params->queue_mtx);
+
+#if defined(USE_EXTERNAL_DONGLE)
+            if (params->xmit_state == UNKEY_REQUESTED) send_switch_rx_mode_packet(params->port);
+            else send_switch_tx_mode_packet(params->port);
+
+            // Get acks from serial port
+            while(dongle_has_data_available(params->port, 0, 5000))
+            {
+                struct dongle_packet packet;
+                if (read_packet(params->port, &packet) <= 0) break;
+            }
+#endif // defined(USE_EXTERNAL_DONGLE)
         }
 
         upsample_output(params);
@@ -523,7 +601,11 @@ void freedv_destroy(freedv_proc_t params)
         pthread_join(params->thread, NULL);
     }
 
+#if defined(USE_EXTERNAL_DONGLE)
+    dongle_close_port(params->port);
+#else
     freedv_close(params->fdv);
+#endif // USE_EXTERNAL_DONGLE
     ringbuf_free(&params->process_in_buffer);
     ringbuf_free(&params->process_out_buffer);
     ringbuf_free(&params->input_buffer);
@@ -571,6 +653,23 @@ void fdv_set_mode(freedv_proc_t params, int mode)
         pthread_join(params->thread, NULL);
     }
 
+#if defined(USE_EXTERNAL_DONGLE)
+    dongle_close_port(params->port);
+    params->port = dongle_open_port("/dev/ttyACM0");
+    if (params->port == NULL)
+    {
+        fprintf(stderr, "Could not open dongle (errno %d)\n", errno);
+    }
+    send_set_fdv_mode_packet(params->port, mode);
+    send_switch_rx_mode_packet(params->port);
+
+    // Get acks from serial port
+    while(dongle_has_data_available(params->port, 0, 5000))
+    {
+        struct dongle_packet packet;
+        if (read_packet(params->port, &packet) <= 0) break;
+    }
+#else
     freedv_close(params->fdv);
     params->fdv = fdv_open(mode);
     params->rt = NULL;
@@ -583,6 +682,7 @@ void fdv_set_mode(freedv_proc_t params, int mode)
         reliable_text_set_string(params->rt, freedv_callsign, strlen(freedv_callsign));
         reliable_text_use_with_freedv(params->rt, params->fdv, &ReliableTextRx, NULL);
     }
+#endif // defined(USE_EXTERNAL_DONGLE)
 
     ringbuf_reset(params->input_buffer);
     ringbuf_reset(params->process_in_buffer);
@@ -598,6 +698,24 @@ freedv_proc_t freedv_init(int mode)
 
     params->xmit_state = READY;
 
+#if defined(USE_EXTERNAL_DONGLE)
+    params->port = dongle_open_port("/dev/ttyACM0");
+    if (params->port == NULL)
+    {
+        fprintf(stderr, "Could not open dongle (errno %d)\n", errno);
+    }
+    send_set_fdv_mode_packet(params->port, mode);
+    send_switch_rx_mode_packet(params->port);
+
+    // Get acks from serial port
+    while(dongle_has_data_available(params->port, 0, 5000))
+    {
+        struct dongle_packet packet;
+        if (read_packet(params->port, &packet) <= 0) break;
+    }
+#else
+    // TBD: reliable_text on dongle
+
     params->fdv = fdv_open(mode);
 
     // Set up reliable_text.
@@ -608,6 +726,7 @@ freedv_proc_t freedv_init(int mode)
         reliable_text_set_string(params->rt, freedv_callsign, strlen(freedv_callsign));
         reliable_text_use_with_freedv(params->rt, params->fdv, &ReliableTextRx, NULL);
     }
+#endif // defined(USE_EXTERNAL_DONGLE)
 
     params->input_buffer = ringbuf_new(PACKET_SAMPLES * 100 * sizeof(float));
     params->process_in_buffer = ringbuf_new(ringbuf_capacity(params->input_buffer) / sizeof(float) / SAMPLE_RATE_RATIO * sizeof(short));
@@ -627,23 +746,33 @@ freedv_proc_t freedv_init(int mode)
 
 void freedv_set_squelch_level(freedv_proc_t params, float squelch)
 {
+#if !defined(USE_EXTERNAL_DONGLE)
+    // TBD: squelch on dongle
     if (params == NULL)
         return;
 
     output("Setting squelch to %f\n", squelch);
     params->squelch_level = squelch;
     freedv_set_snr_squelch_thresh(params->fdv, squelch);
+#endif // !defined(USE_EXTERNAL_DONGLE)
 }
 
 void freedv_set_squelch_status(freedv_proc_t params, int status)
 {
     params->squelch_enabled = status;
+#if !defined(USE_EXTERNAL_DONGLE)
+    // TBD: squelch on dongle
     freedv_set_squelch_en(params->fdv, status);
+#endif // !defined(USE_EXTERNAL_DONGLE)
 }
 
 int freedv_proc_get_mode(freedv_proc_t params)
 {
+#if !defined(USE_EXTERNAL_DONGLE)
     return freedv_get_mode(params->fdv);
+#else
+    return 0;
+#endif // !defined(USE_EXTERNAL_DONGLE)
 }
 
 float freedv_proc_get_squelch_level(freedv_proc_t params)
