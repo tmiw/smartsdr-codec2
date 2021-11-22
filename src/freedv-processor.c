@@ -47,6 +47,14 @@
 
 #define USE_EXTERNAL_DONGLE
 
+// Enable the following for various debugging
+//#define ANALOG_PASSTHROUGH_RX
+//#define ANALOG_PASSTHROUGH_TX
+//#define SINE_WAVE_RX
+//#define SINE_WAVE_TX
+#define ADD_GAIN_TO_TX_OUTPUT
+#define FREEDV_TX_TIMINGS
+
 #define RADIO_SAMPLE_RATE 24000
 #if defined(USE_EXTERNAL_DONGLE)
 #define FREEDV_SAMPLE_RATE 8000
@@ -283,14 +291,6 @@ static void freedv_processing_loop_cleanup(void *arg)
 
 static float tx_scale_factor = exp(5.0f/20.0f * log(10.0f));
 
-// Enable the following for various debugging
-//#define ANALOG_PASSTHROUGH_RX
-//#define ANALOG_PASSTHROUGH_TX
-//#define SINE_WAVE_RX
-//#define SINE_WAVE_TX
-#define ADD_GAIN_TO_TX_OUTPUT
-#define FREEDV_TX_TIMINGS
-
 #if defined(SINE_WAVE_RX) || defined(SINE_WAVE_TX)
 static short sinewave[] = {8000, 0, -8000, 0};
 static int sw_idx = 0;
@@ -300,16 +300,18 @@ static int sw_idx = 0;
 static void rx_handling(freedv_proc_t params)
 {
     short inBuf[DONGLE_AUDIO_LENGTH];
+    struct dongle_packet packet;
 
     while (ringbuf_bytes_used(params->process_in_buffer) >= DONGLE_AUDIO_LENGTH * sizeof(short)) {
         ringbuf_memcpy_from(inBuf, params->process_in_buffer, DONGLE_AUDIO_LENGTH * sizeof(short));
         send_audio_packet(params->port, inBuf);
 
-        while(dongle_has_data_available(params->port, 0, 0))
+        while (dongle_has_data_available(params->port, 0, 0))
         {
-            struct dongle_packet packet;
-
-            if (read_packet(params->port, &packet) <= 0) break;
+            if (read_packet(params->port, &packet) <= 0) {
+                printf("error: %d\n", errno);
+                break;
+            }
             else if (packet.type != DONGLE_PACKET_AUDIO) continue;
 
             ringbuf_memcpy_into (params->process_out_buffer, packet.packet_data.audio_data.audio, packet.length);

@@ -61,12 +61,14 @@ static unpack_fn_t packet_unpack_fn[] = {
 
 static int send_packet_common(struct dongle_packet_handlers* handlers, struct dongle_packet* packet)
 {
-    char* tmpbuf = malloc(
+    size_t alloc_size =
         sizeof(packet->magic_number) + 
         sizeof(packet->version) +
         sizeof(packet->type) +
         sizeof(packet->length) +
-        packet->length);
+        packet->length;
+    
+    char* tmpbuf = calloc(alloc_size, 1);
     if (tmpbuf == NULL) return 0;
 
     packet->magic_number = DONGLE_MAGIC_NUMBER;
@@ -90,7 +92,7 @@ static int send_packet_common(struct dongle_packet_handlers* handlers, struct do
     }
     
     // Write data over serial port.
-    int bytes_to_write = pBuf - &tmpbuf[0];
+    int bytes_to_write = alloc_size;
     pBuf = &tmpbuf[0];
     while (bytes_to_write > 0)
     {
@@ -125,7 +127,7 @@ int send_audio_packet(struct dongle_packet_handlers* handlers, int16_t* audio)
     struct dongle_packet packet;
 
     packet.type = DONGLE_PACKET_AUDIO;
-    memcpy(&packet.packet_data.audio_data, audio, DONGLE_AUDIO_LENGTH * sizeof(int16_t));
+    memcpy(&packet.packet_data.audio_data.audio, audio, DONGLE_AUDIO_LENGTH * sizeof(int16_t));
     packet.length = DONGLE_AUDIO_LENGTH * sizeof(int16_t);
 
     return send_packet_common(handlers, &packet);
@@ -175,40 +177,51 @@ int read_packet(struct dongle_packet_handlers* handlers, struct dongle_packet* p
     }
     
     // Read rest of packet header.
-    char tmpbuf[sizeof(struct dongle_packet)];
-    char* pBuf = &tmpbuf[sizeof(packet->magic_number)];
     int bytes_to_read = 
         sizeof(packet->version) +
         sizeof(packet->type) +
         sizeof(packet->length);
-    
+    char* pBuf = calloc(1, bytes_to_read);
+    if (pBuf == NULL) return 0;
+   
+    char* tmp = pBuf; 
     while(bytes_to_read > 0)
     {
-        int nbytes = (*handlers->read_fn)(handlers, pBuf, bytes_to_read);
-        if (nbytes <= 0) return 0;
+        int nbytes = (*handlers->read_fn)(handlers, tmp, bytes_to_read);
+        if (nbytes <= 0) 
+        {
+            free(pBuf);
+            return 0;
+        }
         bytes_to_read -= nbytes;
-        pBuf += nbytes;
+        tmp += nbytes;
     }
     
     // Copy length to result packet and use that to read in the rest.
-    pBuf = &tmpbuf[sizeof(packet->magic_number)];
-    memcpy(&packet->version, pBuf, sizeof(packet->version));
-    pBuf += sizeof(packet->version);
-    memcpy(&packet->type, pBuf, sizeof(packet->type));
-    pBuf += sizeof(packet->type);
-    memcpy(&packet->length, pBuf, sizeof(packet->length));
-    pBuf += sizeof(packet->length);
-    
+    tmp = pBuf;
+    memcpy(&packet->version, tmp, sizeof(packet->version));
+    tmp += sizeof(packet->version);
+    memcpy(&packet->type, tmp, sizeof(packet->type));
+    tmp += sizeof(packet->type);
+    memcpy(&packet->length, tmp, sizeof(packet->length));
+    free(pBuf);
+
     bytes_to_read = packet->length;
-    char* tmp = pBuf;
+    pBuf = calloc(1, bytes_to_read);
+    if (pBuf == NULL) return 0;
+
+    tmp = pBuf;
     while(bytes_to_read > 0)
     {
-        int nbytes = (*handlers->read_fn)(handlers, pBuf, bytes_to_read);
-        if (nbytes <= 0) return 0;
+        int nbytes = (*handlers->read_fn)(handlers, tmp, bytes_to_read);
+        if (nbytes <= 0) 
+        {
+            free(pBuf);
+            return 0;
+        }
         bytes_to_read -= nbytes;
-        pBuf += nbytes;
+        tmp += nbytes;
     }
-    pBuf = tmp;
 
     // Unpack packet body, if needed.
     if (packet_unpack_fn[packet->type])
@@ -216,6 +229,7 @@ int read_packet(struct dongle_packet_handlers* handlers, struct dongle_packet* p
         (*packet_unpack_fn[packet->type])(pBuf, packet);
     }
     
+    free(pBuf);
     return 1;
 }
 
