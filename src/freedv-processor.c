@@ -297,14 +297,14 @@ static int sw_idx = 0;
 #endif // defined(SINE_WAVE_RX) || defined(SINE_WAVE_TX)
 
 #if defined(USE_EXTERNAL_DONGLE)
-static void rx_handling(freedv_proc_t params)
+static void dongle_rx_tx_common(freedv_proc_t params, int tx)
 {
     short inBuf[DONGLE_AUDIO_LENGTH];
     struct dongle_packet packet;
 
     while (ringbuf_bytes_used(params->process_in_buffer) >= DONGLE_AUDIO_LENGTH * sizeof(short)) {
         ringbuf_memcpy_from(inBuf, params->process_in_buffer, DONGLE_AUDIO_LENGTH * sizeof(short));
-        send_audio_packet(params->port, inBuf);
+        send_audio_packet(params->port, inBuf, tx);
 
         while (dongle_has_data_available(params->port, 0, 0))
         {
@@ -312,17 +312,33 @@ static void rx_handling(freedv_proc_t params)
                 printf("error: %d\n", errno);
                 break;
             }
-            else if (packet.type != DONGLE_PACKET_AUDIO) continue;
+            else if (packet.type != DONGLE_PACKET_RX_AUDIO && packet.type != DONGLE_PACKET_TX_AUDIO) continue;
+
+#if defined(ADD_GAIN_TO_TX_OUTPUT)
+            for (int index = 0; index < packet.length; index++)
+            {
+                // Make samples louder to compensate for lower than expected 
+                // power output otherwise on Flex (e.g. setting the power slider to 
+                // max only gives 30-40W out on the 6300 using 700D + clipping/BPF on).
+                packet.packet_data.audio_data.audio[index] *= tx_scale_factor;
+            }
+#endif // defined(ADD_GAIN_TO_TX_OUTPUT)
 
             ringbuf_memcpy_into (params->process_out_buffer, packet.packet_data.audio_data.audio, packet.length);
         }
     }
 }
 
+static void rx_handling(freedv_proc_t params)
+{
+    // RX and TX are the same for dongle on our side. The dongle does the heavy lifting.
+    dongle_rx_tx_common(params, 0);
+}
+
 static void tx_handling(freedv_proc_t params)
 {
     // RX and TX are the same for dongle on our side. The dongle does the heavy lifting.
-    rx_handling(params);
+    dongle_rx_tx_common(params, 1);
 }
 #else
 static void rx_handling(freedv_proc_t params)
@@ -391,7 +407,7 @@ static void tx_handling(freedv_proc_t params)
         for (int index = 0; index < tx_modem_samples; index++)
         {
 #if defined(ADD_GAIN_TO_TX_OUTPUT)
-            // Make samples louder by 5dB to compensate for lower than expected 
+            // Make samples louder to compensate for lower than expected 
             // power output otherwise on Flex (e.g. setting the power slider to 
             // max only gives 30-40W out on the 6300 using 700D + clipping/BPF on).
             mod_out[index] *= tx_scale_factor;
@@ -540,18 +556,6 @@ static void *_sched_waveform_thread(void *arg)
             soxr_clear(params->upsampler);
             soxr_clear(params->downsampler);
             pthread_mutex_unlock(&params->queue_mtx);
-
-#if defined(USE_EXTERNAL_DONGLE)
-            if (params->xmit_state == UNKEY_REQUESTED) send_switch_rx_mode_packet(params->port);
-            else send_switch_tx_mode_packet(params->port);
-
-            // Get acks from serial port
-            while(dongle_has_data_available(params->port, 0, 5000))
-            {
-                struct dongle_packet packet;
-                if (read_packet(params->port, &packet) <= 0) break;
-            }
-#endif // defined(USE_EXTERNAL_DONGLE)
         }
 
         upsample_output(params);
@@ -663,7 +667,6 @@ void fdv_set_mode(freedv_proc_t params, int mode)
         fprintf(stderr, "Could not open dongle (errno %d)\n", errno);
     }
     send_set_fdv_mode_packet(params->port, mode);
-    send_switch_rx_mode_packet(params->port);
 
     // Get acks from serial port
     while(dongle_has_data_available(params->port, 0, 5000))
@@ -707,7 +710,6 @@ freedv_proc_t freedv_init(int mode)
         fprintf(stderr, "Could not open dongle (errno %d)\n", errno);
     }
     send_set_fdv_mode_packet(params->port, mode);
-    send_switch_rx_mode_packet(params->port);
 
     // Get acks from serial port
     while(dongle_has_data_available(params->port, 0, 5000))
