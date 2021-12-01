@@ -289,7 +289,7 @@ static void freedv_processing_loop_cleanup(void *arg)
     pthread_mutex_destroy(&params->queue_mtx);
 }
 
-static float tx_scale_factor = exp(5.0f/20.0f * log(10.0f));
+static float tx_scale_factor = exp(3.0f/20.0f * log(10.0f));
 
 #if defined(SINE_WAVE_RX) || defined(SINE_WAVE_TX)
 static short sinewave[] = {8000, 0, -8000, 0};
@@ -319,7 +319,7 @@ static void dongle_rx_tx_common(freedv_proc_t params, int tx)
             {
                 // Make samples louder to compensate for lower than expected 
                 // power output otherwise on Flex (e.g. setting the power slider to 
-                // max only gives 30-40W out on the 6300 using 700D + clipping/BPF on).
+                // max only gives 20-30W out on the 6300 using 700D + clipping/BPF on).
                 packet.packet_data.audio_data.audio[index] *= tx_scale_factor;
             }
 #endif // defined(ADD_GAIN_TO_TX_OUTPUT)
@@ -409,7 +409,7 @@ static void tx_handling(freedv_proc_t params)
 #if defined(ADD_GAIN_TO_TX_OUTPUT)
             // Make samples louder to compensate for lower than expected 
             // power output otherwise on Flex (e.g. setting the power slider to 
-            // max only gives 30-40W out on the 6300 using 700D + clipping/BPF on).
+            // max only gives 20-30W out on the 6300 using 700D + clipping/BPF on).
             mod_out[index] *= tx_scale_factor;
 #endif // defined(ADD_GAIN_TO_TX_OUTPUT)
         }
