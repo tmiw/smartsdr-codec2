@@ -69,6 +69,7 @@ static char freedv_callsign[10];
 struct freedv_proc_t {
     pthread_t thread;
     int running;
+    int mode;
 #if defined(USE_EXTERNAL_DONGLE)
     struct dongle_packet_handlers* port;
 #else
@@ -272,7 +273,6 @@ static void freedv_processing_loop_cleanup(void *arg)
 #if defined(USE_EXTERNAL_DONGLE)
     dongle_close_port(params->port);
 #else
-    // TBD: reliable_text support on dongle
     if (params->rt)
     {
         reliable_text_destroy(params->rt);
@@ -556,6 +556,36 @@ static void *_sched_waveform_thread(void *arg)
             soxr_clear(params->upsampler);
             soxr_clear(params->downsampler);
             pthread_mutex_unlock(&params->queue_mtx);
+
+#if defined(USE_EXTERNAL_DONGLE)
+    if (params->port)
+    {
+        dongle_close_port(params->port);
+        params->port = NULL;
+    }
+    params->port = dongle_open_port("/dev/ttyACM0");
+    if (params->port == NULL)
+    {
+        fprintf(stderr, "Could not open dongle (errno %d)\n", errno);
+    }
+    send_set_fdv_mode_packet(params->port, params->mode);
+
+    // Get acks from serial port
+    while(dongle_has_data_available(params->port, 0, 5000))
+    {
+        struct dongle_packet packet;
+        if (read_packet(params->port, &packet) <= 0) break;
+    }
+
+    output("Enabling reliable_text using callsign %s\n", freedv_callsign);
+    send_callsign_packet(params->port, freedv_callsign);
+
+    while(dongle_has_data_available(params->port, 0, 5000))
+    {
+        struct dongle_packet packet;
+        if (read_packet(params->port, &packet) <= 0) break;
+    }
+#endif // defined(USE_EXTERNAL_DONGLE)
         }
 
         upsample_output(params);
@@ -659,16 +689,31 @@ void fdv_set_mode(freedv_proc_t params, int mode)
         pthread_join(params->thread, NULL);
     }
 
+    params->mode = mode;
+
 #if defined(USE_EXTERNAL_DONGLE)
-    dongle_close_port(params->port);
+    if (params->port)
+    {
+        dongle_close_port(params->port);
+        params->port = NULL;
+    }
     params->port = dongle_open_port("/dev/ttyACM0");
     if (params->port == NULL)
     {
         fprintf(stderr, "Could not open dongle (errno %d)\n", errno);
     }
-    send_set_fdv_mode_packet(params->port, mode);
+    send_set_fdv_mode_packet(params->port, params->mode);
 
     // Get acks from serial port
+    while(dongle_has_data_available(params->port, 0, 5000))
+    {
+        struct dongle_packet packet;
+        if (read_packet(params->port, &packet) <= 0) break;
+    }
+
+    output("Enabling reliable_text using callsign %s\n", freedv_callsign);
+    send_callsign_packet(params->port, freedv_callsign);
+
     while(dongle_has_data_available(params->port, 0, 5000))
     {
         struct dongle_packet packet;
@@ -702,6 +747,7 @@ freedv_proc_t freedv_init(int mode)
     freedv_proc_t params = malloc(sizeof(struct freedv_proc_t));
 
     params->xmit_state = READY;
+    params->mode = mode;
 
 #if defined(USE_EXTERNAL_DONGLE)
     params->port = dongle_open_port("/dev/ttyACM0");
@@ -709,7 +755,7 @@ freedv_proc_t freedv_init(int mode)
     {
         fprintf(stderr, "Could not open dongle (errno %d)\n", errno);
     }
-    send_set_fdv_mode_packet(params->port, mode);
+    send_set_fdv_mode_packet(params->port, params->mode);
 
     // Get acks from serial port
     while(dongle_has_data_available(params->port, 0, 5000))
@@ -717,9 +763,16 @@ freedv_proc_t freedv_init(int mode)
         struct dongle_packet packet;
         if (read_packet(params->port, &packet) <= 0) break;
     }
-#else
-    // TBD: reliable_text on dongle
 
+    output("Enabling reliable_text using callsign %s\n", freedv_callsign);
+    send_callsign_packet(params->port, freedv_callsign);
+
+    while(dongle_has_data_available(params->port, 0, 5000))
+    {
+        struct dongle_packet packet;
+        if (read_packet(params->port, &packet) <= 0) break;
+    }
+#else
     params->fdv = fdv_open(mode);
 
     // Set up reliable_text.
@@ -775,7 +828,7 @@ int freedv_proc_get_mode(freedv_proc_t params)
 #if !defined(USE_EXTERNAL_DONGLE)
     return freedv_get_mode(params->fdv);
 #else
-    return 0;
+    return params->mode;
 #endif // !defined(USE_EXTERNAL_DONGLE)
 }
 
