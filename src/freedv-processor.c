@@ -257,11 +257,21 @@ void freedv_set_callsign(freedv_proc_t params, char* callsign)
     strncpy(freedv_callsign, callsign, 9);
     output("Setting callsign to %s\n", freedv_callsign);
 #if !defined(USE_EXTERNAL_DONGLE)
-    // TBD: reliable_text support on dongle
     if (params && params->fdv && params->rt)
     {
         output("Sending callsign %s to reliable_text\n", freedv_callsign);
         reliable_text_set_string(params->rt, freedv_callsign, strlen(freedv_callsign));
+    }
+#else
+    if (params && params->port)
+    {
+        send_callsign_packet(params->port, freedv_callsign);
+
+        while(dongle_has_data_available(params->port, 0, 5000))
+        {
+            struct dongle_packet packet;
+            if (read_packet(params->port, &packet) <= 0) break;
+        }
     }
 #endif // defined(USE_EXTERNAL_DONGLE)
 }
