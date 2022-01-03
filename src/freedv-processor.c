@@ -282,6 +282,7 @@ static void freedv_processing_loop_cleanup(void *arg)
 
 #if defined(USE_EXTERNAL_DONGLE)
     dongle_close_port(params->port);
+    usleep(1000);
 #else
     if (params->rt)
     {
@@ -573,6 +574,7 @@ static void *_sched_waveform_thread(void *arg)
         dongle_close_port(params->port);
         params->port = NULL;
     }
+    usleep(1000);
     params->port = dongle_open_port("/dev/ttyACM0");
     if (params->port == NULL)
     {
@@ -649,6 +651,7 @@ void freedv_destroy(freedv_proc_t params)
 
 #if defined(USE_EXTERNAL_DONGLE)
     dongle_close_port(params->port);
+    usleep(1000);
 #else
     freedv_close(params->fdv);
 #endif // USE_EXTERNAL_DONGLE
@@ -707,6 +710,7 @@ void fdv_set_mode(freedv_proc_t params, int mode)
         dongle_close_port(params->port);
         params->port = NULL;
     }
+    usleep(1000);
     params->port = dongle_open_port("/dev/ttyACM0");
     if (params->port == NULL)
     {
