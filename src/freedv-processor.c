@@ -53,7 +53,7 @@
 //#define SINE_WAVE_RX
 //#define SINE_WAVE_TX
 #define ADD_GAIN_TO_TX_OUTPUT
-#define FREEDV_TX_TIMINGS
+//#define FREEDV_TX_TIMINGS
 
 #define RADIO_SAMPLE_RATE 24000
 #if defined(USE_EXTERNAL_DONGLE)
@@ -300,7 +300,7 @@ static void freedv_processing_loop_cleanup(void *arg)
     pthread_mutex_destroy(&params->queue_mtx);
 }
 
-static float tx_scale_factor = exp(3.0f/20.0f * log(10.0f));
+static float tx_scale_factor = exp(6.0f/20.0f * log(10.0f));
 
 #if defined(SINE_WAVE_RX) || defined(SINE_WAVE_TX)
 static short sinewave[] = {8000, 0, -8000, 0};

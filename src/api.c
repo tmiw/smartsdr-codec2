@@ -389,7 +389,7 @@ int deregister_waveforms()
     }
  
     send_api_command_and_wait("waveform remove FreeDV-USB", NULL);
-    send_api_command_and_wait("waveform remove FreeDV-LSB", NULL);
+    //send_api_command_and_wait("waveform remove FreeDV-LSB", NULL);
 
     return 0;
 }
