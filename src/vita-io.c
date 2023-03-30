@@ -92,7 +92,7 @@ static void vita_parse_packet(struct vita_packet *packet, size_t packet_len)
     }
 }
 
-#define MAX_PACKETS_TO_RECEIVE 48
+#define MAX_PACKETS_TO_RECEIVE 2
 
 static void* vita_processing_loop()
 {
@@ -114,7 +114,7 @@ static void* vita_processing_loop()
             continue;
         }
 
-        long nanoseconds = (1000000000 / RADIO_SAMPLE_RATE) * (360 * MAX_PACKETS_TO_RECEIVE);
+        long nanoseconds = (180.0 / RADIO_SAMPLE_RATE) * MAX_PACKETS_TO_RECEIVE * 1000000000;
         long seconds = (timeout.tv_nsec + nanoseconds) / 1000000000;
         timeout.tv_nsec = (timeout.tv_nsec + nanoseconds) % 1000000000;
         timeout.tv_sec += seconds;
@@ -286,6 +286,7 @@ static void vita_send_packet(struct aiocb* cb,  size_t payload_len)
     current_time = packet->timestamp_int;
 
     cb->aio_nbytes = packet_len;
+    //write(vita_sock, packet, packet_len);
     aio_write(cb);
 }
 
