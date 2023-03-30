@@ -36,7 +36,7 @@
 
 #include "modem_stats.h"
 
-#include "soxr.h"
+//#include "soxr.h"
 
 #include "freedv-processor.h"
 #include "utils.h"
@@ -45,7 +45,9 @@
 #include "api.h"
 #include "dongle_protocol.h"
 
-#define USE_EXTERNAL_DONGLE
+#include "codec2_fdmdv.h"
+
+//#define USE_EXTERNAL_DONGLE
 
 // Enable the following for various debugging
 //#define ANALOG_PASSTHROUGH_RX
@@ -85,8 +87,12 @@ struct freedv_proc_t {
     float squelch_level;
     int squelch_enabled;
 
-    soxr_t downsampler;
-    soxr_t upsampler;
+    //soxr_t downsampler;
+    //soxr_t upsampler;
+    float downsamplerInBuf[PACKET_SAMPLES * FDMDV_OS_24 + FDMDV_OS_TAPS_24K];
+    short downsamplerOutBuf[PACKET_SAMPLES];
+    short upsamplerInBuf[PACKET_SAMPLES + FDMDV_OS_TAPS_24_8K];
+    float upsamplerOutBuf[PACKET_SAMPLES * FDMDV_OS_24];
 
     pthread_mutex_t queue_mtx;
     pthread_cond_t waiter;
@@ -213,13 +219,14 @@ void freedv_queue_samples(freedv_proc_t params, int tx, size_t len, uint32_t *sa
 {
     assert(params != NULL);
 
-    unsigned int num_samples = len / sizeof(uint32_t);
+    unsigned int num_samples = len >> 2; // / sizeof(uint32_t);
+    unsigned int half_num_samples = num_samples >> 1;
 
-    for (unsigned int i = 0; i < num_samples / 2; ++i)
-        samples[i] = ntohl(samples[i * 2]);
+    for (unsigned int i = 0; i < half_num_samples; ++i)
+        samples[i] = ntohl(samples[i << 1]);
 
     pthread_mutex_lock(&params->queue_mtx);
-    ringbuf_memcpy_into (params->input_buffer, samples, (num_samples / 2) * sizeof(uint32_t));
+    ringbuf_memcpy_into (params->input_buffer, samples, len >> 1); //(num_samples / 2) * sizeof(uint32_t));
     pthread_mutex_unlock(&params->queue_mtx);
 }
 
@@ -400,7 +407,7 @@ static void tx_handling(freedv_proc_t params)
     short speech_in[num_speech_samples];
     short mod_out[tx_modem_samples];
 
-    while (ringbuf_bytes_used(params->process_in_buffer) >= num_speech_samples * sizeof(short)) {
+    if (ringbuf_bytes_used(params->process_in_buffer) >= num_speech_samples * sizeof(short)) {
         ringbuf_memcpy_from(speech_in, params->process_in_buffer, num_speech_samples * sizeof(short));
 
 #if defined(ANALOG_PASSTHROUGH_TX)
@@ -433,9 +440,17 @@ static void tx_handling(freedv_proc_t params)
 void downsample_input(freedv_proc_t params)
 {
     int bytes_used_float = ringbuf_bytes_used(params->input_buffer);
-    int samples_used_float = bytes_used_float / sizeof(float);
-    if (samples_used_float == 0) return;
+    int samples_used_float = bytes_used_float >> 2; // / sizeof(float);
 
+    while (samples_used_float >= (PACKET_SAMPLES * FDMDV_OS_24))
+    {
+        ringbuf_memcpy_from (&params->downsamplerInBuf[FDMDV_OS_TAPS_24K], params->input_buffer, sizeof(float) * (PACKET_SAMPLES * FDMDV_OS_24));
+        fdmdv_24_to_8(params->downsamplerOutBuf, &params->downsamplerInBuf[FDMDV_OS_TAPS_24K], PACKET_SAMPLES);
+        ringbuf_memcpy_into (params->process_in_buffer, params->downsamplerOutBuf, PACKET_SAMPLES * sizeof(short));
+
+        samples_used_float -= PACKET_SAMPLES * FDMDV_OS_24;
+    }
+#if 0
     int samples_used_int16 = samples_used_float / SAMPLE_RATE_RATIO + 1;
     int bytes_used_int16 = samples_used_int16 * sizeof(short);
     size_t idone = 0, odone = 0;
@@ -455,14 +470,22 @@ void downsample_input(freedv_proc_t params)
 
     free(resample_buffer_int16);
     free(resample_buffer_float32);
+#endif
 }
 
 void upsample_output(freedv_proc_t params)
 {
     int bytes_used_int16 = ringbuf_bytes_used(params->process_out_buffer);
-    int samples_used_int16 = bytes_used_int16 / sizeof(short);
-    if (samples_used_int16 == 0) return;
+    int samples_used_int16 = bytes_used_int16 >> 1; // / sizeof(short);
 
+    while (samples_used_int16 >= PACKET_SAMPLES)
+    {
+        ringbuf_memcpy_from (&params->upsamplerInBuf[FDMDV_OS_TAPS_24_8K], params->process_out_buffer, sizeof(short) * PACKET_SAMPLES);
+        fdmdv_8_to_24(params->upsamplerOutBuf, &params->upsamplerInBuf[FDMDV_OS_TAPS_24_8K], PACKET_SAMPLES);
+        ringbuf_memcpy_into (params->output_buffer, params->upsamplerOutBuf, PACKET_SAMPLES * FDMDV_OS_24 * sizeof(float));
+        samples_used_int16 -= PACKET_SAMPLES;
+    }
+#if 0
     int samples_used_float = (samples_used_int16 + 1) * SAMPLE_RATE_RATIO;
     int bytes_used_float = samples_used_float * sizeof(float);
     size_t idone = 0, odone = 0;
@@ -482,6 +505,7 @@ void upsample_output(freedv_proc_t params)
 
     free(resample_buffer_int16);
     free(resample_buffer_float32);
+#endif
 }
 
 static void *_sched_waveform_thread(void *arg)
@@ -496,11 +520,11 @@ static void *_sched_waveform_thread(void *arg)
     struct timespec time_end;
 #endif // defined(FREEDV_TX_TIMINGS)
 
-    soxr_io_spec_t io_spec = soxr_io_spec(SOXR_INT16_I, SOXR_FLOAT32_I);
+    /*soxr_io_spec_t io_spec = soxr_io_spec(SOXR_INT16_I, SOXR_FLOAT32_I);
     params->upsampler = soxr_create(FREEDV_SAMPLE_RATE, RADIO_SAMPLE_RATE, 1, NULL, &io_spec, NULL, NULL);
 
     soxr_io_spec_t io_spec_downsample = soxr_io_spec(SOXR_FLOAT32_I, SOXR_INT16_I);
-    params->downsampler = soxr_create(RADIO_SAMPLE_RATE, FREEDV_SAMPLE_RATE, 1, NULL, &io_spec_downsample, NULL, NULL);
+    params->downsampler = soxr_create(RADIO_SAMPLE_RATE, FREEDV_SAMPLE_RATE, 1, NULL, &io_spec_downsample, NULL, NULL);*/
 
     params->running = 1;
     output("Starting processing thread...\n");
@@ -564,8 +588,8 @@ static void *_sched_waveform_thread(void *arg)
             ringbuf_reset(params->input_buffer);
             ringbuf_reset(params->process_in_buffer);
             ringbuf_reset(params->process_out_buffer);
-            soxr_clear(params->upsampler);
-            soxr_clear(params->downsampler);
+            //soxr_clear(params->upsampler);
+            //soxr_clear(params->downsampler);
             pthread_mutex_unlock(&params->queue_mtx);
 
 #if defined(USE_EXTERNAL_DONGLE)
@@ -628,8 +652,8 @@ static void *_sched_waveform_thread(void *arg)
 
     output("Processing thread stopped...\n");
 
-    soxr_delete(params->upsampler);
-    soxr_delete(params->downsampler);
+    //soxr_delete(params->upsampler);
+    //soxr_delete(params->downsampler);
 
     return NULL;
 }
@@ -667,15 +691,7 @@ void freedv_destroy(freedv_proc_t params)
 
 static struct freedv *fdv_open(int mode)
 {
-    struct freedv *fdv;
-
-    if ((mode == FREEDV_MODE_700D) || (mode == FREEDV_MODE_700E) || (mode == FREEDV_MODE_2020)) {
-        struct freedv_advanced adv;
-        fdv = freedv_open_advanced(mode, &adv);
-    } else {
-        fdv = freedv_open(mode);
-    }
-
+    struct freedv *fdv = freedv_open(mode);
     assert(fdv != NULL);
 
     if (mode == FREEDV_MODE_700D || mode == FREEDV_MODE_700E)
@@ -799,8 +815,8 @@ freedv_proc_t freedv_init(int mode)
     }
 #endif // defined(USE_EXTERNAL_DONGLE)
 
-    params->input_buffer = ringbuf_new(PACKET_SAMPLES * 100 * sizeof(float));
-    params->process_in_buffer = ringbuf_new(ringbuf_capacity(params->input_buffer) / sizeof(float) / SAMPLE_RATE_RATIO * sizeof(short));
+    params->input_buffer = ringbuf_new(PACKET_SAMPLES * SAMPLE_RATE_RATIO * 40 * sizeof(float));
+    params->process_in_buffer = ringbuf_new(PACKET_SAMPLES * 40 * sizeof(short));
     params->process_out_buffer = ringbuf_new(ringbuf_capacity(params->process_in_buffer));
     params->output_buffer = ringbuf_new(ringbuf_capacity(params->input_buffer));
 
@@ -855,3 +871,4 @@ int freedv_proc_get_squelch_status(freedv_proc_t params)
 {
     return params->squelch_enabled;
 }
+

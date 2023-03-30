@@ -24,6 +24,7 @@
  */
 
 #define _GNU_SOURCE
+#define RADIO_SAMPLE_RATE (24000)
 
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -91,7 +92,7 @@ static void vita_parse_packet(struct vita_packet *packet, size_t packet_len)
     }
 }
 
-#define MAX_PACKETS_TO_RECEIVE 1
+#define MAX_PACKETS_TO_RECEIVE 48
 
 static void* vita_processing_loop()
 {
@@ -113,7 +114,7 @@ static void* vita_processing_loop()
             continue;
         }
 
-        long nanoseconds = 5333333; // (1000000000 / RADIO_SAMPLE_RATE) * 128
+        long nanoseconds = (1000000000 / RADIO_SAMPLE_RATE) * (360 * MAX_PACKETS_TO_RECEIVE);
         long seconds = (timeout.tv_nsec + nanoseconds) / 1000000000;
         timeout.tv_nsec = (timeout.tv_nsec + nanoseconds) % 1000000000;
         timeout.tv_sec += seconds;
@@ -237,7 +238,7 @@ void vita_stop()
     }
 }
 
-#define MAX_SEND_PACKETS_IN_QUEUE 32
+#define MAX_SEND_PACKETS_IN_QUEUE 48
 
 static struct vita_packet queued_packet[MAX_SEND_PACKETS_IN_QUEUE];
 static struct aiocb queued_packet_cb[MAX_SEND_PACKETS_IN_QUEUE];
@@ -274,7 +275,7 @@ static void vita_send_packet(struct aiocb* cb,  size_t payload_len)
     //  XXX Lots of magic numbers here!
     packet->timestamp_type = 0x50u | (packet->timestamp_type & 0x0Fu);
     assert(packet_len % 4 == 0);
-    packet->length = htons(packet_len / 4); // Length is in 32-bit words
+    packet->length = htons(packet_len >> 2); // Length is in 32-bit words
 
     packet->timestamp_int = time(NULL);
     if (packet->timestamp_int != current_time)
@@ -317,7 +318,7 @@ void vita_send_audio_packet(uint32_t *samples, size_t len, unsigned int tx)
     packet->class_id = AUDIO_CLASS_ID;
     packet->timestamp_type = audio_sequence++;
 
-    for (unsigned int i = 0, j = 0; i < len / sizeof(uint32_t); ++i, j += 2)
+    for (unsigned int i = 0, j = 0; i < len >> 2; ++i, j += 2)
         packet->if_samples[j] = packet->if_samples[j + 1] = htonl(samples[i]);
 
     vita_send_packet(cb, len * 2);

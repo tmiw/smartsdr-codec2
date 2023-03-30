@@ -242,7 +242,9 @@ int read_packet(struct dongle_packet_handlers* handlers, struct dongle_packet* p
 #include <termios.h> 
 #include <unistd.h>
 #include <sys/select.h>
+#include <sys/ioctl.h>
 #include <assert.h>
+#include <errno.h>
 
 static int usb_read_data(struct dongle_packet_handlers* hndl, void* ptr, int size)
 {
@@ -251,16 +253,20 @@ static int usb_read_data(struct dongle_packet_handlers* hndl, void* ptr, int siz
     struct termios tty;
     if(tcgetattr(sock, &tty) != 0) 
     {
-        fprintf(stderr, "warning: could not get termios values\n");
+        fprintf(stderr, "warning: could not get termios values (errno = %d)\n", errno);
         return read(sock, ptr, size);
     }
-    
+  
+#ifdef CIGNORE 
+    tty.c_cflag |= CIGNORE; /* avoid changing hardware properties, equivalent to TCSASOFT */ 
+#endif /* CIGNORE */
+
     tty.c_cc[VTIME] = 0;
     tty.c_cc[VMIN] = size; 
 
     if (tcsetattr(sock, TCSANOW, &tty) != 0)
     {
-        fprintf(stderr, "warning: could not get termios values\n");
+        fprintf(stderr, "warning: could not set termios values (errno = %d)\n", errno);
     }
     
     int result = read(sock, ptr, size);
@@ -270,7 +276,7 @@ static int usb_read_data(struct dongle_packet_handlers* hndl, void* ptr, int siz
 
     if (tcsetattr(sock, TCSANOW, &tty) != 0)
     {
-        fprintf(stderr, "warning: could not restore termios values\n");
+        fprintf(stderr, "warning: could not restore termios values (errno = %d)\n", errno);
     }
 
     return result;
@@ -341,7 +347,11 @@ struct dongle_packet_handlers* dongle_open_port(char* serialPort)
         free(retVal);
         return NULL;
     }
-    
+   
+    /* Set DTR manually as some platforms won't do it. */
+    int dtrFlag = TIOCM_DTR;
+    ioctl(portSocket, TIOCMBIS, &dtrFlag);
+ 
     retVal->state = portSocket;
     return retVal;
 }
@@ -351,6 +361,11 @@ void dongle_close_port(struct dongle_packet_handlers* handle)
     assert(handle != NULL);
     
     int sock = (int)handle->state;
+
+    /* Clear DTR. */
+    int dtrFlag = TIOCM_DTR;
+    ioctl(sock, TIOCMBIC, &dtrFlag);
+
     close(sock);
     
     free(handle);

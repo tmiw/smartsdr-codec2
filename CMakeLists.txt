@@ -122,7 +122,7 @@ endif(CMAKE_SYSTEM_PROCESSOR MATCHES "^arm")
 
 FetchContent_Declare(codec2
   GIT_REPOSITORY https://github.com/drowe67/codec2.git
-  GIT_TAG origin/ms-arm-flex6k-nomerge
+  GIT_TAG origin/ms-8-to-24k
   GIT_SHALLOW OFF
   GIT_PROGRESS OFF
 )
@@ -141,12 +141,12 @@ target_include_directories(waveform PUBLIC ${codec2_SOURCE_DIR}/src ${SOXR_INCLU
 add_dependencies(waveform  soxr)
 # codec2
 
-add_executable(freedv main.c)
+add_executable(freedv main.c src/freedv-math.c)
 target_include_directories(freedv PRIVATE src ${codec2_SOURCE_DIR}/src)
 if (CMAKE_SYSTEM_PROCESSOR MATCHES "^arm")
-add_executable(freedv_tx2 ${codec2_SOURCE_DIR}/src/freedv_tx.c)
+add_executable(freedv_tx2 ${codec2_SOURCE_DIR}/src/freedv_tx.c src/freedv-math.c)
 target_link_libraries(freedv_tx2 CMSISDSP codec2)
-add_executable(freedv_rx2 ${codec2_SOURCE_DIR}/src/freedv_rx.c)
+add_executable(freedv_rx2 ${codec2_SOURCE_DIR}/src/freedv_rx.c src/freedv-math.c)
 target_link_libraries(freedv_rx2 CMSISDSP codec2)
 
 target_link_libraries(freedv waveform  ${SOXR_LIB_PATH} CMSISDSP codec2 m rt pthread)
