@@ -36,8 +36,6 @@
 
 #include "modem_stats.h"
 
-//#include "soxr.h"
-
 #include "freedv-processor.h"
 #include "utils.h"
 #include "vita-io.h"
@@ -87,8 +85,6 @@ struct freedv_proc_t {
     float squelch_level;
     int squelch_enabled;
 
-    //soxr_t downsampler;
-    //soxr_t upsampler;
     float downsamplerInBuf[PACKET_SAMPLES * FDMDV_OS_24 + FDMDV_OS_TAPS_24K];
     short downsamplerOutBuf[PACKET_SAMPLES];
     short upsamplerInBuf[PACKET_SAMPLES + FDMDV_OS_TAPS_24_8K];
@@ -450,27 +446,6 @@ void downsample_input(freedv_proc_t params)
 
         samples_used_float -= PACKET_SAMPLES * FDMDV_OS_24;
     }
-#if 0
-    int samples_used_int16 = samples_used_float / SAMPLE_RATE_RATIO + 1;
-    int bytes_used_int16 = samples_used_int16 * sizeof(short);
-    size_t idone = 0, odone = 0;
-
-    float* resample_buffer_float32 = malloc(bytes_used_float);
-    short* resample_buffer_int16 = malloc(bytes_used_int16);
-    assert(resample_buffer_float32 && resample_buffer_int16);
-
-    ringbuf_memcpy_from (resample_buffer_float32, params->input_buffer, bytes_used_float);
-
-    soxr_process(
-        params->downsampler, resample_buffer_float32, samples_used_float, &idone,
-        resample_buffer_int16, samples_used_int16, &odone);
-
-    ringbuf_memcpy_into (params->process_in_buffer, resample_buffer_int16, odone * sizeof(short));
-    ringbuf_memcpy_into (params->input_buffer, &resample_buffer_float32[idone], (samples_used_float - idone) * sizeof(float));
-
-    free(resample_buffer_int16);
-    free(resample_buffer_float32);
-#endif
 }
 
 void upsample_output(freedv_proc_t params)
@@ -485,27 +460,6 @@ void upsample_output(freedv_proc_t params)
         ringbuf_memcpy_into (params->output_buffer, params->upsamplerOutBuf, PACKET_SAMPLES * FDMDV_OS_24 * sizeof(float));
         samples_used_int16 -= PACKET_SAMPLES;
     }
-#if 0
-    int samples_used_float = (samples_used_int16 + 1) * SAMPLE_RATE_RATIO;
-    int bytes_used_float = samples_used_float * sizeof(float);
-    size_t idone = 0, odone = 0;
-
-    float* resample_buffer_float32 = malloc(bytes_used_float);
-    short* resample_buffer_int16 = malloc(bytes_used_int16);
-    assert(resample_buffer_float32 && resample_buffer_int16);
-
-    ringbuf_memcpy_from (resample_buffer_int16, params->process_out_buffer, bytes_used_int16);
-
-    soxr_process(
-        params->upsampler, resample_buffer_int16, samples_used_int16, &idone,
-        resample_buffer_float32, samples_used_float, &odone);
-
-    ringbuf_memcpy_into (params->output_buffer, resample_buffer_float32, odone * sizeof(float));
-    ringbuf_memcpy_into (params->process_out_buffer, &resample_buffer_int16[idone], (samples_used_int16 - idone) * sizeof(short));
-
-    free(resample_buffer_int16);
-    free(resample_buffer_float32);
-#endif
 }
 
 static void *_sched_waveform_thread(void *arg)
@@ -519,12 +473,6 @@ static void *_sched_waveform_thread(void *arg)
     struct timespec time_begin;
     struct timespec time_end;
 #endif // defined(FREEDV_TX_TIMINGS)
-
-    /*soxr_io_spec_t io_spec = soxr_io_spec(SOXR_INT16_I, SOXR_FLOAT32_I);
-    params->upsampler = soxr_create(FREEDV_SAMPLE_RATE, RADIO_SAMPLE_RATE, 1, NULL, &io_spec, NULL, NULL);
-
-    soxr_io_spec_t io_spec_downsample = soxr_io_spec(SOXR_FLOAT32_I, SOXR_INT16_I);
-    params->downsampler = soxr_create(RADIO_SAMPLE_RATE, FREEDV_SAMPLE_RATE, 1, NULL, &io_spec_downsample, NULL, NULL);*/
 
     params->running = 1;
     output("Starting processing thread...\n");
@@ -588,8 +536,6 @@ static void *_sched_waveform_thread(void *arg)
             ringbuf_reset(params->input_buffer);
             ringbuf_reset(params->process_in_buffer);
             ringbuf_reset(params->process_out_buffer);
-            //soxr_clear(params->upsampler);
-            //soxr_clear(params->downsampler);
             pthread_mutex_unlock(&params->queue_mtx);
 
 #if defined(USE_EXTERNAL_DONGLE)
@@ -651,9 +597,6 @@ static void *_sched_waveform_thread(void *arg)
     }
 
     output("Processing thread stopped...\n");
-
-    //soxr_delete(params->upsampler);
-    //soxr_delete(params->downsampler);
 
     return NULL;
 }

@@ -70,28 +70,6 @@ set(CMAKE_FIND_LIBRARY_SUFFIXES ".a")
 #set(CODEC2_INCLUDE_DIR ${SOURCE_DIR}/src)
 #set(CODEC2_LIB_PATH ${BINARY_DIR}/src/${CMAKE_STATIC_LIBRARY_PREFIX}codec2${CMAKE_STATIC_LIBRARY_SUFFIX})
 
-#  SOXR resampling library
-ExternalProject_Add(soxr
-        PREFIX libsoxr
-        GIT_REPOSITORY https://git.code.sf.net/p/soxr/code
-        GIT_SHALLOW ON
-        GIT_PROGRESS ON
-        EXCLUDE_FROM_ALL ON
-        PATCH_COMMAND patch -p1 --forward < ${CMAKE_SOURCE_DIR}/soxr_disable_vfpv4.patch || true
-        BUILD_COMMAND cmake --build . --target soxr
-        INSTALL_COMMAND ""
-        CMAKE_CACHE_ARGS
-          -DCMAKE_C_FLAGS:STRING=${CMAKE_C_FLAGS_${BUILD_TYPE_UC}}
-          -DBUILD_SHARED_LIBS:BOOL=OFF
-          -DWITH_OPENMP:BOOL=OFF
-          -DWITH_LSR_BINDINGS:BOOL=OFF
-          -DCMAKE_BUILD_TYPE:STRING=${UNDERLYING_BUILD_TYPE}
-          -DCMAKE_TOOLCHAIN_FILE:STRING=${CMAKE_TOOLCHAIN_FILE})
-ExternalProject_Get_Property(soxr BINARY_DIR SOURCE_DIR)
-set(SOXR_INCLUDE_DIR ${SOURCE_DIR}/src)
-set(SOXR_LIB_PATH ${BINARY_DIR}/src/${CMAKE_STATIC_LIBRARY_PREFIX}soxr${CMAKE_STATIC_LIBRARY_SUFFIX})
-
-
 #  This is conditional on ARM architecture!
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "^arm")
 message("Adding CMSIS to build.")
@@ -137,9 +115,7 @@ add_subdirectory(${codec2_SOURCE_DIR} ${codec2_BINARY_DIR} EXCLUDE_FROM_ALL)
 
 #  Our code
 add_subdirectory(src)
-target_include_directories(waveform PUBLIC ${codec2_SOURCE_DIR}/src ${SOXR_INCLUDE_DIR})
-add_dependencies(waveform  soxr)
-# codec2
+target_include_directories(waveform PUBLIC ${codec2_SOURCE_DIR}/src)
 
 add_executable(freedv main.c src/freedv-math.c)
 target_include_directories(freedv PRIVATE src ${codec2_SOURCE_DIR}/src)
@@ -149,9 +125,9 @@ target_link_libraries(freedv_tx2 CMSISDSP codec2)
 add_executable(freedv_rx2 ${codec2_SOURCE_DIR}/src/freedv_rx.c src/freedv-math.c)
 target_link_libraries(freedv_rx2 CMSISDSP codec2)
 
-target_link_libraries(freedv waveform  ${SOXR_LIB_PATH} CMSISDSP codec2 m rt pthread)
+target_link_libraries(freedv waveform CMSISDSP codec2 m rt pthread)
 else(CMAKE_SYSTEM_PROCESSOR MATCHES "^arm")
-target_link_libraries(freedv waveform  ${SOXR_LIB_PATH} codec2 m rt pthread)
+target_link_libraries(freedv waveform codec2 m rt pthread)
 add_executable(freedv_tx2 ${codec2_SOURCE_DIR}/src/freedv_tx.c)
 target_link_libraries(freedv_tx2 codec2)
 add_executable(freedv_rx2 ${codec2_SOURCE_DIR}/src/freedv_rx.c)
