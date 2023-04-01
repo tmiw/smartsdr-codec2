@@ -90,9 +90,6 @@ int main(int argc, char **argv)
     sigaddset(&stop_sigs, SIGINT);
     sigaddset(&stop_sigs, SIGTERM);
 
-    // Force enable SIMD support for soxr.
-    setenv("SOXR_USE_SIMD32", "1", 1);
-
     // Set global pthread properties for each new thread we make.
     struct sched_param sched_parameters;
     sched_parameters.sched_priority = 51; //sched_get_priority_max(SCHED_FIFO) / 2;
@@ -107,7 +104,7 @@ int main(int argc, char **argv)
     // Set AIO parameters to optimize for single core.
     struct aioinit aio_args = {
         .aio_threads = 1,
-        .aio_num = 32, /* Should match MAX_SEND_PACKETS_IN_QUEUE in vita-io.c */
+        .aio_num = 64, /* Should match MAX_SEND_PACKETS_IN_QUEUE in vita-io.c */
     };
     aio_init(&aio_args);
 

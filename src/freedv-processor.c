@@ -64,7 +64,8 @@
 #define FREEDV_SAMPLE_RATE (freedv_get_modem_sample_rate(params->fdv))
 #endif // defined(USE_EXTERNAL_DONGLE)
 #define SAMPLE_RATE_RATIO (RADIO_SAMPLE_RATE / FREEDV_SAMPLE_RATE)
-#define PACKET_SAMPLES  128
+#define PACKET_SAMPLES  42
+#define PACKET_SAMPLES_TO_SEND (PACKET_SAMPLES * FDMDV_OS_24)
 
 static char freedv_callsign[10];
 
@@ -87,10 +88,10 @@ struct freedv_proc_t {
     float squelch_level;
     int squelch_enabled;
 
-    float downsamplerInBuf[PACKET_SAMPLES * FDMDV_OS_24 + FDMDV_OS_TAPS_24K];
+    float downsamplerInBuf[PACKET_SAMPLES_TO_SEND + FDMDV_OS_TAPS_24K];
     short downsamplerOutBuf[PACKET_SAMPLES];
     short upsamplerInBuf[PACKET_SAMPLES + FDMDV_OS_TAPS_24_8K];
-    float upsamplerOutBuf[PACKET_SAMPLES * FDMDV_OS_24];
+    float upsamplerOutBuf[PACKET_SAMPLES_TO_SEND];
 
     // TODO: Meter table?
 };
@@ -100,9 +101,9 @@ void downsample_input(freedv_proc_t params)
     int bytes_used_float = ringbuf_bytes_used(params->input_buffer);
     int samples_used_float = bytes_used_float >> 2; // / sizeof(float);
 
-    while (samples_used_float >= (PACKET_SAMPLES * FDMDV_OS_24))
+    while (samples_used_float >= PACKET_SAMPLES_TO_SEND)
     {
-        ringbuf_memcpy_from (&params->downsamplerInBuf[FDMDV_OS_TAPS_24K], params->input_buffer, sizeof(float) * (PACKET_SAMPLES * FDMDV_OS_24));
+        ringbuf_memcpy_from (&params->downsamplerInBuf[FDMDV_OS_TAPS_24K], params->input_buffer, sizeof(float) * PACKET_SAMPLES_TO_SEND);
         fdmdv_24_to_8(params->downsamplerOutBuf, &params->downsamplerInBuf[FDMDV_OS_TAPS_24K], PACKET_SAMPLES);
 
         codec2_fifo_write(params->process_in_buffer, params->downsamplerOutBuf, PACKET_SAMPLES);
@@ -441,7 +442,7 @@ void upsample_output(freedv_proc_t params)
 {
     while (codec2_fifo_read(params->process_out_buffer, &params->upsamplerInBuf[FDMDV_OS_TAPS_24_8K], PACKET_SAMPLES) == 0) {
         fdmdv_8_to_24(params->upsamplerOutBuf, &params->upsamplerInBuf[FDMDV_OS_TAPS_24_8K], PACKET_SAMPLES);
-        ringbuf_memcpy_into (params->output_buffer, params->upsamplerOutBuf, PACKET_SAMPLES * FDMDV_OS_24 * sizeof(float));
+        ringbuf_memcpy_into (params->output_buffer, params->upsamplerOutBuf, PACKET_SAMPLES_TO_SEND * sizeof(float));
     }
 }
 
@@ -594,8 +595,8 @@ static struct freedv *fdv_open(int mode)
 
     if (mode == FREEDV_MODE_700D || mode == FREEDV_MODE_700E)
     {
-        freedv_set_clip(fdv, 0);
-        freedv_set_tx_bpf(fdv, 0);
+        freedv_set_clip(fdv, 1);
+        freedv_set_tx_bpf(fdv, 1);
     }
 
     return fdv;

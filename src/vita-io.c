@@ -238,7 +238,7 @@ void vita_stop()
     }
 }
 
-#define MAX_SEND_PACKETS_IN_QUEUE 48
+#define MAX_SEND_PACKETS_IN_QUEUE 64
 
 static struct vita_packet queued_packet[MAX_SEND_PACKETS_IN_QUEUE];
 static struct aiocb queued_packet_cb[MAX_SEND_PACKETS_IN_QUEUE];

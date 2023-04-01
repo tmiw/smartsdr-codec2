@@ -49,7 +49,7 @@ struct mode_entry {
 
 static const struct mode_entry mode_table[] = {
         { FREEDV_MODE_700C,     "700C",     500,    2500, 1500 },
-        { FREEDV_MODE_700D,     "700D",     500,    2500, 1500 },
+        { FREEDV_MODE_700D,     "700D",     1000,    2000, 1500 },
         { FREEDV_MODE_700E,     "700E",     500,    2500, 1500 },
         { FREEDV_MODE_800XA,    "800XA",    500,    2500, 1500 },
         { FREEDV_MODE_1600,     "1600",     500,    2500, 1500 }
@@ -367,13 +367,13 @@ int register_waveforms()
 {
     send_api_command("waveform create name=FreeDV-USB mode=FDVU underlying_mode=DIGU version=2.0.0");
     send_api_command("waveform set FreeDV-USB tx=1");
-    send_api_command("waveform set FreeDV-USB rx_filter depth=8");
-    send_api_command("waveform set FreeDV-USB tx_filter depth=8");
+    send_api_command("waveform set FreeDV-USB rx_filter depth=256");
+    send_api_command("waveform set FreeDV-USB tx_filter depth=256");
 
     send_api_command("waveform create name=FreeDV-LSB mode=FDVL underlying_mode=DIGL version=2.0.0");
     send_api_command("waveform set FreeDV-LSB tx=1");
-    send_api_command("waveform set FreeDV-LSB rx_filter depth=8");
-    send_api_command("waveform set FreeDV-LSB tx_filter depth=8");
+    send_api_command("waveform set FreeDV-LSB rx_filter depth=256");
+    send_api_command("waveform set FreeDV-LSB tx_filter depth=256");
 
     return 0;
 }
